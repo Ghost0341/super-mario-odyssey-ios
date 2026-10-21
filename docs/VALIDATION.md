@@ -51,7 +51,7 @@ existing development profile; the phone check included its CloudKit entitlements
 No device app was replaced during repository validation. Automatic creation of
 a new developer team's profile is not covered by those signing checks.
 
-A clean source clone passed the game-free suite: 21 Python tests, native
+A clean source clone passed the game-free suite: 24 Python tests, native
 controller/observer/viewport checks, save-commit callback tests, 146 save-archive
 checks, and 17 coordinator scenarios with 153 checks. GitHub Actions runs the
 same game-free suite. Private inputs, caches, IPAs, signing receipts and logs

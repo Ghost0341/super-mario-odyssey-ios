@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / 'tools'))
 from odyssey import make_profile, parse_args
 from odyssey_assets import outside_repo, verify_extraction
 from sign_install import MEMORY, CLOUD_ENV, CLOUD_IDS, check_ipa, validate_profile
+from audit_repo import inspect_entry, TOOL_PREFIX
 
 
 class WorkflowTests(unittest.TestCase):
@@ -97,6 +98,24 @@ class WorkflowTests(unittest.TestCase):
         options = parse_args(['--nsp-dir', '/private/game', '--keys', '/private/keys', '--preset', 'iphone'])
         self.assertEqual(options.preset, 'iphone')
         self.assertEqual(options.cloud_container, '')
+
+    def test_publication_rejects_assets_even_when_they_are_plain_text(self):
+        self.assertTrue(inspect_entry('shader.metal', b'// private generated shader', {}))
+        self.assertTrue(inspect_entry('main', b'NSO0 synthetic fixture', {}))
+        self.assertTrue(inspect_entry('archive.zip', b'synthetic', {}))
+        self.assertEqual(inspect_entry('host.c', b'// original source\n', {}), [])
+
+    def test_publication_rejects_unknown_binary_and_private_credentials(self):
+        self.assertTrue(inspect_entry('unexpected.dat', bytes([255, 254, 253]), {}))
+        self.assertTrue(inspect_entry('accident.txt', b'-----BEGIN ' + b'PRIVATE KEY-----', {}))
+
+    def test_only_exact_pinned_tool_bytes_are_exempted_from_text_rule(self):
+        import hashlib
+        name, payload = TOOL_PREFIX + 'fixture.dll', bytes([255, 254, 253])
+        manifest = {name: hashlib.sha256(payload).hexdigest()}
+        self.assertEqual(inspect_entry(name, payload, manifest), [])
+        self.assertTrue(inspect_entry(name, payload + b'changed', manifest))
+        self.assertTrue(inspect_entry(TOOL_PREFIX + 'unlisted.dll', payload, manifest))
 
 
 if __name__ == '__main__':

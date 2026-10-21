@@ -21,7 +21,9 @@ or game-bearing outputs. Its primary-source reference is linked in README.md.
 `dm/gfx/tools/dmsh_xlate_bin` contains the upstream redistributable **tool**
 binaries and managed dependencies matching `dmsh_chain.lock`, not shaders from
 a game. They are retained because rebuilding the translator changes its shader
-fingerprints. Corresponding tool source, project references and third-party
+fingerprints. Their exact bytes are pinned in
+[TOOLCHAIN-BINARIES.json](TOOLCHAIN-BINARIES.json); the publication audit rejects
+changed/unlisted tools and other binary files. Corresponding tool source, project references and third-party
 notices are in dm/gfx/tools/dmsh_xlate and dm/third_party. Game shader caches are
 generated from a player's own files and excluded from publication.
 
