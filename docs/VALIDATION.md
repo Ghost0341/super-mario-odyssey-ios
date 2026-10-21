@@ -32,6 +32,31 @@
 - A clean source build/signing-helper check does not automatically install or
   replace the already tested apps. New packaged artifacts need their own live QA.
 
+## Repository workflow verification
+
+The portable workflow was exercised with Xcode 27.1 and the original local
+cartridge XCI plus update 1.4.1 NSP, in an independent private work directory.
+It rebuilt the extractor from source, extracted and integrity-checked the merged
+game, rewrote all three modules, split 27,984 shaders, prepared the matching HUD,
+compiled the app and packed a private IPA. The shader pass reused a verified
+local cache: 27,981 were ready and the same three documented shaders failed.
+This was a full input-to-IPA check, not a new cold compile of every shader.
+
+Separate extracted-file builds produced both the iPad and iPhone variants. All
+209 output archive hashes for each preset match the accepted local display
+build, and the phone rewritten-module hash matches its accepted camera/haptic
+module. The controller, cloud and interpolation runtime sources are unchanged
+from the local port. Both variants were signed and strictly verified with an
+existing development profile; the phone check included its CloudKit entitlements.
+No device app was replaced during repository validation. Automatic creation of
+a new developer team's profile is not covered by those signing checks.
+
+A clean source clone passed the game-free suite: 21 Python tests, native
+controller/observer/viewport checks, save-commit callback tests, 146 save-archive
+checks, and 17 coordinator scenarios with 153 checks. GitHub Actions runs the
+same game-free suite. Private inputs, caches, IPAs, signing receipts and logs
+are not uploaded to GitHub.
+
 ## Game-free checks
 
 ```sh
