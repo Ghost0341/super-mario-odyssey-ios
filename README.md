@@ -8,13 +8,11 @@ triggers. No JIT or jailbreak. Built on [nxnative](https://github.com/seedds/nxn
 
 Provide your own **base game, update 1.4.1, and console keys**. The build tools
 prepare everything locally on your Mac. This repository contains the port's
-source and tools; it does not contain Nintendo game code or assets, keys, saves,
-or a ready-to-play IPA.
+source and tools; it does not contain Nintendo assets.
 
 I've been playing on an **iPad Pro 13-inch (M5)** and **iPhone 17 Pro Max** on
 iPadOS/iOS 27. Picture, sound, controls, motion and the main controller effects
-have been tested in gameplay. It's still early; other devices and the full game
-haven't been certified. [Installation steps are at the bottom.](#install-it-yourself)
+have been tested in gameplay. [Installation](#install-it-yourself)
 
 ## What this adds
 
@@ -23,26 +21,17 @@ haven't been certified. [Installation steps are at the bottom.](#install-it-your
 - A separate **239:110 iPhone view**, matched to the tested iPhone 17 Pro Max.
 - **Shake-to-throw Cappy**, using a compatible physical controller's motion sensors.
 - The game's original left/right vibration patterns, translated to controller haptics.
-- A short **adaptive-trigger recoil on every long jump**, including chained rolling
-  jumps while you keep a trigger held. Backflips have their own cue; wall jumps
-  and side flips use distinct handle textures.
+- **PS5 DualSense Support** Complete with haptic engine mappings and adaptive trigger feedback.
 - Optional **up to 120 displayed FPS** through frame interpolation on supported
-  devices. The game simulation stays at its original 60 Hz.
-- Optional private **iCloud save sync**, under your own developer team's container.
-
-The extra trigger kick is sent only to a trigger you're holding. Controllers
-without adaptive triggers retain their supported controls and vibration; they
-cannot reproduce the same trigger effect. Effects stop when the app deactivates
-or the controller disconnects.
+  devices.
+- Private **iCloud save sync**, under your own developer team's container.
 
 ## Controls
 
-Connect a DualSense in **Settings → Bluetooth** before opening the game. Hold
-**PS + Create** until the light flashes, then select the controller.
+Connect a controller in **Settings → Bluetooth** before opening the game.
 
 Use the sticks to move and look, the face buttons to jump/throw Cappy, and
-L2/R2 to crouch or roll. The game uses Nintendo's button labels; follow the
-on-screen layout when using a PlayStation controller. Shake the controller for
+L2/R2 to crouch or roll. Shake the controller for
 motion actions. Touch controls are available too, but physical-controller motion
 and adaptive triggers require the appropriate hardware.
 
