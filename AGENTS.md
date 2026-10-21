@@ -11,8 +11,11 @@ README.md, and keep flags/examples synchronized with the actual tools.
   game modules, translated game shaders, fonts/icons extracted or copied from
   another product, saves, keys, certificates, provisioning profiles, signed apps,
   IPAs, private logs, account identifiers or device inventories.
-- Game inputs and generated outputs must be outside this repository, even if
-  ignored. `tools/audit_repo.py` checks the index; do not bypass it.
+- Game inputs and generated game content must be outside this repository, even
+  if ignored. The player builder links Gen/ into its private work directory.
+  Generated headers, source links and project metadata may use the existing
+  ignored build directories; never stage/commit them. `tools/audit_repo.py`
+  checks the index; do not bypass it.
 - Use the player's own keys; never print key values. Do not download game files.
 - Default cloud sync stays off. Never bake a contributor's bundle/container,
   developer team, device ID, absolute home path or signing identity into source.

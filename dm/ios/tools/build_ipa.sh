@@ -38,7 +38,15 @@ else [ -n "$V" ] && ls "$MSL_IOS/b-$V" 2> /dev/null | grep -q '_b.metallib$' || 
 
 t "app: $DM_DISPLAY_NAME $DM_APP_VERSION ($DM_BUNDLE_ID)$([ $DM_SHOW_FPS = YES ] && echo ', frame-rate counter on')"
 t "generate Gen/ (host sources, embedded modules, tables)"
-rm -rf Gen && mkdir -p Gen/dm || die "mkdir Gen"
+rm -rf Gen || die "remove previous generated links"
+if [ -n "${ODYSSEY_PRESET:-}" ]; then
+  # Icons/fonts and generated embed inputs belong in the player's private work
+  # directory too. The ignored Gen/ entry is only a link into that directory.
+  mkdir -p "$W" || die "mkdir private work directory"
+  PRIVATE_GEN=$(mktemp -d "$W/generated.XXXXXX") || die "private generated directory"
+  ln -s "$PRIVATE_GEN" Gen || die "link private generated directory"
+fi
+mkdir -p Gen/dm || die "mkdir Gen"
 python3 tools/gen_build.py ../host Gen > Gen/dm.xcconfig || die "gen_build"
 F=$(python3 tools/gen_embed.py "$PATCHED" Gen/embed.S $MODS) || die "gen_embed"
 echo "OTHER_LDFLAGS = \$(inherited) \$(DM_FRAMEWORKS) $F" >> Gen/dm.xcconfig
