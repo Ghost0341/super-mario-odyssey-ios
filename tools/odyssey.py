@@ -59,7 +59,7 @@ def check_tools() -> None:
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     inputs = parser.add_mutually_exclusive_group(required=True)
-    inputs.add_argument('--nsp-dir', type=Path, help='folder with base-game NSP and update 1.4.1 NSP')
+    inputs.add_argument('--nsp-dir', type=Path, help='folder with base-game NSP or XCI and update 1.4.1 NSP')
     inputs.add_argument('--extracted-dir', type=Path, help='already merged 1.4.1 folder containing ExeFS and RomFS')
     parser.add_argument('--keys', type=Path, help='your prod.keys; required with --nsp-dir')
     parser.add_argument('--preset', choices=('ipad', 'iphone'), default='ipad', help='ipad=4:3; iphone=239:110 (17 Pro Max)')

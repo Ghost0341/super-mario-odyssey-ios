@@ -83,7 +83,7 @@ local backups and treat cloud sync as experimental.
 
 ## Building and contributing
 
-The supported inputs are the base game plus **update 1.4.1 (`v393216`)**,
+The supported inputs are the base game (**NSP or XCI**) plus **update 1.4.1 (`v393216`)**,
 title ID `0100000000010000`. The tools check exact module hashes/build IDs and
 reject other versions. [Input details and extracted-folder support](docs/INPUTS.md)
 cover the same files used for the tested builds.
@@ -162,7 +162,7 @@ Allow about **40 GB free on the Mac** for game files, caches and packaging and
    ```
 
 3. **Put your game files together.** Create a folder outside the source repo,
-   such as `~/Games/Odyssey`. Put your base-game NSP and update **1.4.1 NSP**
+   such as `~/Games/Odyssey`. Put your base-game **NSP or XCI** and update **1.4.1 NSP**
    there. Keep your `prod.keys` elsewhere, such as `~/Games/Keys/prod.keys`.
    Only one game's files should be in the folder. Don't rename a different
    update to 1.4.1; its actual build will be checked.

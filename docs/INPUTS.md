@@ -2,10 +2,15 @@
 
 The player build supports Super Mario Odyssey, base title ID
 `0100000000010000`, plus update **1.4.1**, package `v393216` (update title
-`0100000000010800`). Supply the base NSP and update NSP together with your own
+`0100000000010800`). Supply the base **NSP or XCI** and update NSP together with your own
 console `prod.keys`. Extraction uses the upstream LibHac tool and validates NCA
 integrity. This wrapper does not enable damaged-file overrides or provisional
 profiles. No firmware image is required by this tested build path.
+
+The original tested local inputs were a cartridge-format `.xci` base and an
+update `.nsp`. The folder scanner recognizes that combination even when the
+cartridge filename has no title-ID tag; the extracted module identities are
+still checked. Keep only one base game and the supported update in that folder.
 
 The exact merged update modules used for the working port are:
 
