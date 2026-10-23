@@ -170,7 +170,18 @@ int main(void) {
     dm_feedback_poll(at+2, &controller);
     dm_feedback_native_poll(&native);
     dm_feedback_output after; dm_feedback_poll(at+2, &after);
-    CHECK(!memcmp(&controller, &after, sizeof after));
+    // Struct assignment need not preserve padding bytes across compilers.
+    // Compare every published field to prove the local poll is non-consuming.
+#define SAME(field) CHECK(controller.field == after.field)
+    SAME(epoch); SAME(connected); SAME(foreground); SAME(capabilities);
+    SAME(motion_samples); SAME(motion_updated_ns); SAME(vibration_sends);
+    SAME(motion_reads); SAME(motion_states_returned); SAME(motion_epoch); SAME(motion_available);
+    for (int side = 0; side < 2; ++side) {
+        SAME(value[side].amp_low); SAME(value[side].freq_low);
+        SAME(value[side].amp_high); SAME(value[side].freq_high);
+        SAME(updated_ns[side]); SAME(sequence[side]);
+    }
+#undef SAME
     CHECK(near(native.value[0].amp_low, .5f));
     native.value[0].amp_low = 0; // modifying the local copy cannot change host state
     dm_feedback_poll(at+2, &after); CHECK(near(after.value[0].amp_low, .5f));
