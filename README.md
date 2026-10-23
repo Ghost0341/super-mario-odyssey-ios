@@ -19,9 +19,11 @@ have been tested in gameplay. [Installation](#install-it-yourself)
 - A **4:3 iPad view** with corrected camera projection, HUD, dialogue backgrounds
   and screen transitions. Mario and circular icons keep their proportions.
 - A separate **239:110 iPhone view**, matched to the tested iPhone 17 Pro Max.
+- **Live Duo layouts** in the 4:3-prepared build: camera, HUD, safe areas and
+  controls adapt together through landscape folding without restarting the game.
 - **Shake-to-throw Cappy**, using a compatible physical controller's motion sensors.
 - The game's original left/right vibration patterns, translated to controller haptics.
-- **PS5 DualSense Support** Complete with haptic engine mappings and adaptive trigger feedback.
+- **PS5 DualSense support**, with independent handle haptics and adaptive trigger feedback for supported game events.
 - Optional **up to 120 displayed FPS** through frame interpolation on supported
   devices.
 - Private **iCloud save sync**, under your own developer team's container.
@@ -32,16 +34,59 @@ Connect a controller in **Settings → Bluetooth** before opening the game.
 
 Use the sticks to move and look, the face buttons to jump/throw Cappy, and
 L2/R2 to crouch or roll. Shake the controller for
-motion actions. Touch controls are available too, but physical-controller motion
-and adaptive triggers require the appropriate hardware.
+motion actions. Touch controls are available too; adaptive triggers require
+the appropriate controller.
+
+Tap the top-center **gear** to open Settings. A drag, cancelled touch or
+second gear finger stays consumed without pressing a game control. VoiceOver
+also offers **Open settings**. The gear remains available with a controller.
+The full Odyssey touch layout always includes the D-pad and invisible floating
+right stick, alongside the fixed left stick and Nintendo face diamond.
+
+The frame-rate counter sits in the safe-area top-left on iPhone and iPad. Tap
+it to hide its text; tap the same corner again to reveal it. Other gameplay
+touches stay active. The app remembers visibility, and generated presentation
+keeps the FG marker. The player confirmed hide/reveal working on the M5 iPad
+in the current build; the new phone package remains pending installation.
+
+Settings has exactly three switches: **Gyro**, **Device haptics**, and **Also
+with controller**. Gyro On uses Auto, preferring fresh controller motion and
+falling back to iPhone/iPad sensors. Off disables motion. Existing calibration
+and controller feedback are preserved. The player reports iPhone device gyro
+working; other orientations, handoffs and iPad gyro need their own checks.
+
+Device haptics On follows native rumble and guarded gameplay events through a
+separate finite phone sink. **Also with controller** controls only device
+vibration; it does not change controller vibration or adaptive triggers.
+Unsupported devices show **Unavailable on this device** and remain quiet. The
+tested iPad has no built-in actuator. Bullet Bill capture is a felt-positive
+native baseline. Build18's extra cues were physically rejected as too strong
+and buzzing. Build19 uses lower-strength, sharp one-shot haptic transients for
+confirmed in-game events; input edges never generate a cue. Strong native
+rumble takes priority, and held or duplicate events cannot renew a tap. Its
+physical feel is pending a new phone check. It covers guarded normal jumps/landings, long jumps/backflips,
+cap throws, standard coins and ground pounds. Special actor variants are not
+implied. Advanced stored preferences are retained without extra menu sections.
+
+Existing stored frame-interpolation preferences are retained, and
+`DM_FRAMEGEN` environment overrides keep precedence. The three-switch sheet
+adds no display menu. No setting changes the game's 60 Hz simulation.
 
 ## Display and performance
 
-Choose `--preset ipad` for **4:3**, or `--preset iphone` for **239:110**.
-These are explicit presets, not automatic detection of every iPhone or iPad.
-Other screen shapes may have borders. Changing only the display size or stretching
-the final image will distort the game; the build also prepares matching camera
-and HUD changes.
+Choose `--preset ipad` or `--preset duo` for the **4:3 preparation with live
+landscape adaptation from 1:1 through 16:9**. Both produce a universal app with
+the same guarded camera/HUD path; `duo` makes the intended target explicit.
+Actual scene geometry and safe insets drive folding, rather than the phone/tablet
+device name. The separate `--preset iphone` retains the **239:110** preparation
+for the tested iPhone 17 Pro Max; use the Duo preset for a Duo.
+
+The live path is enabled by default only after both exact-build camera and HUD
+guards pass. Unsupported preparations or geometry keep proportional composition.
+`DM_ODYSSEY_DYNAMIC_DISPLAY=0` is a diagnostic opt-out. See
+[display transitions](docs/DISPLAY-TRANSITIONS.md) for source, frame ownership and
+evidence limits. The observed Duo gameplay uses a labeled Mac-backed Simulator
+preview; physical Duo execution and performance are untested.
 
 The internal raster remains **1600 × 900**. Full-screen aspect does not mean
 native display-pixel rendering. On the tested ProMotion devices the FPS overlay
@@ -169,7 +214,8 @@ Allow about **40 GB free on the Mac** for game files, caches and packaging and
    ```
 
    For the tested iPhone 17 Pro Max layout, change `--preset ipad` to
-   `--preset iphone` and use a different output filename. The first build takes
+   `--preset iphone`. For a Duo, use `--preset duo`. Use a different output
+   filename for each preparation. The first build takes
    longer because it prepares shaders. The last line prints the IPA's path.
    That IPA contains your game files; keep it private.
 

@@ -1,0 +1,28 @@
+// Execute the real invalidation functions. No Metal/GPU or guest is mocked as proof.
+#import <Foundation/Foundation.h>
+#include <assert.h>
+#include <pthread.h>
+static pthread_mutex_t g_pq_mu=PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t g_pq_cv=PTHREAD_COND_INITIALIZER;
+static uint64_t g_fg_epoch=1,g_fg_last_native=12;
+static NSMutableArray *g_fg_captures,*g_fg_outputs;
+static id g_fg_latest;
+static double g_fg_last_submit=3,g_fg_last_target=4,g_fg_refresh=120;
+static int g_fg_slow=2;
+// These native ownership values must never be retired by a resize notification.
+static uint64_t g_pq_done=41;
+static int g_pq_inflight=1,g_fg_capture_busy=1,g_native_present_busy=1,g_fg_display_submit_busy=1;
+/* INVALIDATE */
+/* GEOMETRY_HOOK */
+static void *resize(void *unused) { (void)unused;@autoreleasepool {for(unsigned i=0;i<500;i++)mtl_present_geometry_changed();}return NULL; }
+int main(void) { @autoreleasepool {
+    g_fg_captures=[NSMutableArray arrayWithObjects:@1,@2,nil];g_fg_outputs=[NSMutableArray arrayWithObjects:@3,@4,nil];g_fg_latest=@5;
+    mtl_present_geometry_changed();
+    assert(g_fg_epoch==2 && !g_fg_captures.count && !g_fg_outputs.count && !g_fg_latest);
+    assert(!g_fg_last_native && !g_fg_last_submit && !g_fg_last_target && !g_fg_slow);
+    assert(g_pq_done==41 && g_pq_inflight==1 && g_fg_capture_busy==1 && g_native_present_busy==1 && g_fg_display_submit_busy==1);
+    pthread_t threads[4];for(unsigned i=0;i<4;i++)assert(!pthread_create(&threads[i],NULL,resize,NULL));
+    for(unsigned i=0;i<4;i++)assert(!pthread_join(threads[i],NULL));
+    assert(g_fg_epoch==2002 && g_pq_done==41 && g_pq_inflight==1 && g_fg_capture_busy==1 && g_native_present_busy==1 && g_fg_display_submit_busy==1);
+    puts("PASS: actual resize invalidator rejects stale interpolation history without retiring native GPU/capture ownership; 2001 notifications");return 0;
+} }

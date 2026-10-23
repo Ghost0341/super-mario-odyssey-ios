@@ -1,5 +1,6 @@
 // Included after pq_item. Owned snapshots release the game's swapchain before
 // the independent, bounded interpolation worker runs. All queue state uses g_pq_mu.
+#include "nvn_frame_geometry.h"
 @interface NVNFGPending : NSObject
 @property(nonatomic, strong) NVNFrameGenCapture *capture;
 @property(nonatomic) uint64_t epoch;
@@ -17,6 +18,9 @@ static uint64_t g_fg_epoch = 1, g_fg_last_native, g_fg_captured, g_fg_capture_dr
 static double g_fg_refresh = 120, g_fg_last_target, g_fg_cooldown, g_fg_last_submit;
 static uint64_t g_fg_starvation_fallbacks;
 static int g_fg_slow;
+static int g_fg_have_source_geometry;
+static double g_fg_source_aspect;
+static uint64_t g_fg_source_generation;
 static _Atomic uint64_t g_fg_generated, g_fg_native_displayed;
 static _Atomic double g_fg_latency_ms;
 
@@ -36,6 +40,28 @@ static void fg_invalidate_locked(void) {
     g_fg_latest = nil; g_fg_last_native = 0;
     g_fg_last_submit = 0; g_fg_last_target = 0; g_fg_refresh = 120; g_fg_slow = 0;
     pthread_cond_broadcast(&g_pq_cv);
+}
+
+// A request epoch can first capture a queued OLD-geometry raster. The first
+// NEW-geometry raster starts another owned-history epoch even at the same pixel
+// dimensions. Native swapchain FIFO tickets and reservations are untouched.
+static uint64_t fg_admit_geometry_locked(double aspect, uint64_t generation) {
+    if (g_fg_have_source_geometry && !nvn_frame_geometry_equal(aspect, generation,
+            g_fg_source_aspect, g_fg_source_generation)) fg_invalidate_locked();
+    g_fg_have_source_geometry = 1;
+    g_fg_source_aspect = aspect;
+    g_fg_source_generation = generation;
+    return g_fg_epoch;
+}
+
+// UIKit calls this on actual drawable size/scale changes. Retire only owned
+// snapshots: native FIFO fences still own game swapchain storage. The model
+// worker resets its history when it observes this epoch; never wait for Metal
+// or call generator properties while holding the presentation mutex.
+void mtl_present_geometry_changed(void) {
+    pthread_mutex_lock(&g_pq_mu);
+    fg_invalidate_locked();
+    pthread_mutex_unlock(&g_pq_mu);
 }
 
 // A reservation, rather than a lock held across Metal, closes the lifecycle
@@ -115,6 +141,7 @@ static void fg_write_stats(void) {
         @"nativeFramesDisplayed": @(atomic_load(&g_fg_native_displayed)),
         @"latestDisplayLatencyMs": @(atomic_load(&g_fg_latency_ms)),
         @"cooldownSeconds": @(fmax(0, g_fg_cooldown - CACurrentMediaTime())),
+        @"sourceLogicalAspect": @(g_fg_source_aspect), @"sourceGeometryGeneration": @(g_fg_source_generation),
         @"timestamp": @(CACurrentMediaTime()) }];
     pthread_mutex_unlock(&g_pq_mu);
     NSString *path = nil;
@@ -154,6 +181,7 @@ static void fg_capture(pq_item it, uint64_t ticket, uint64_t epoch) {
             }
             if (valid) capture = [g_fg captureSource:src crop:crop originLowerLeft:it.origin_ll
                 ticket:ticket gameFrame:it.frame enqueuedTime:it.t_in
+                logicalAspect:it.logical_aspect geometryGeneration:it.geometry_generation
                 waitEvent:it.ev_val && g_ext_ev ? g_ext_ev : g_ev waitValue:it.ev_val ?: it.render_fence];
         }
     }
@@ -174,6 +202,7 @@ static void fg_capture(pq_item it, uint64_t ticket, uint64_t epoch) {
     g_fg_capture_busy = 0;
     if (ticket > g_pq_done) g_pq_done = ticket;
     if (capture && epoch == g_fg_epoch && !g_fg_paused && !atomic_load(&g_present_discard)) {
+        epoch = fg_admit_geometry_locked(it.logical_aspect, it.geometry_generation);
         g_fg_captured++; g_fg_latest = capture.sourceOutput;
         // No waiting for the model: discard older *owned copies*, never game storage.
         while (g_fg_captures.count >= 2) { [g_fg_captures removeObjectAtIndex:0]; g_fg_capture_dropped++; }
@@ -216,7 +245,7 @@ static int fg_display(CAMetalDisplayLinkUpdate *update) {
     pthread_mutex_unlock(&g_pq_mu);
     // No queue mutex spans Metal: command-buffer allocation, submission, or a
     // presented handler may wait for or synchronously invoke another callback.
-    MTLViewport vp = present_viewport(out.texture.width, out.texture.height, update.drawable.texture.width, update.drawable.texture.height);
+    MTLViewport vp = present_viewport(out.texture.width, out.texture.height, update.drawable.texture.width, update.drawable.texture.height, out.logicalAspect);
     BOOL submitted = [g_fg presentOutput:out drawable:update.drawable viewport:vp completion:^(double time) {
         if (time <= 0) return;
         atomic_fetch_add(&g_fg_displayed, 1);

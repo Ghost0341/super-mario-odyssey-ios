@@ -103,6 +103,9 @@ static void host_preload(int argc, char **argv) {
     { void loader_hash_log(void); loader_hash_log(); }   // DM_LOADHASH=1: address-independent hash of the load result (loader.c)
     { void dm_ue_malloc_install(void); dm_ue_malloc_install(); }   // Unreal's allocator on a host malloc zone, for the builds whose constructor call is cut (hle_uemalloc.c)
     { void dm_odyssey_feedback_install(void); dm_odyssey_feedback_install(); }   // Exact-build, read-only action observation through a checked data vtable slot
+    { void dm_odyssey_local_feedback_install(void); dm_odyssey_local_feedback_install(); } // Separately guarded local-device cues
+    { void dm_odyssey_display_install(void); dm_odyssey_display_install(); } // Paired camera/HUD, guarded 4:3 default.
+    { void dm_odyssey_display_hud_install(void); dm_odyssey_display_hud_install(); }
 }
 static struct { int argc; char **argv; pthread_t th; _Atomic int started; } g_pre;
 static void *preload_thread(void *a) { (void)a; host_preload(g_pre.argc, g_pre.argv); return NULL; }

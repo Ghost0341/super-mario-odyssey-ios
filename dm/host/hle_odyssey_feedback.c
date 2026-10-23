@@ -227,3 +227,6 @@ void dm_odyssey_feedback_get_stats(dm_odyssey_feedback_stats *out) {
     *out = g_stats;
     pthread_mutex_unlock(&g_lock);
 }
+uint64_t dm_odyssey_feedback_reserve_sequence(void) {
+    pthread_mutex_lock(&g_lock); uint64_t sequence=++g_sequence; pthread_mutex_unlock(&g_lock); return sequence;
+}

@@ -12,6 +12,12 @@ typedef enum {
     DM_ODYSSEY_BACKFLIP = 3,
     DM_ODYSSEY_WALL_JUMP = 4,
     DM_ODYSSEY_SIDE_FLIP = 5,
+    DM_ODYSSEY_NORMAL_JUMP = 6,
+    DM_ODYSSEY_LANDING = 7,
+    DM_ODYSSEY_CAP_THROW = 8,
+    DM_ODYSSEY_COIN = 9,
+    DM_ODYSSEY_GROUND_POUND_START = 10,
+    DM_ODYSSEY_GROUND_POUND_IMPACT = 11,
 } dm_odyssey_feedback_kind;
 
 typedef struct {
@@ -34,6 +40,11 @@ void dm_odyssey_feedback_set_active(int active);
 // Drain on the controller's serial update queue. Events older than 200 ms are discarded.
 int dm_odyssey_feedback_next(dm_odyssey_feedback_event *out);
 void dm_odyssey_feedback_get_stats(dm_odyssey_feedback_stats *out);
+// Local-only events share sequence identity, never the controller's bounded queue.
+uint64_t dm_odyssey_feedback_reserve_sequence(void);
+static inline int dm_odyssey_feedback_controller_kind(dm_odyssey_feedback_kind kind) {
+    return kind>=DM_ODYSSEY_LONG_JUMP&&kind<=DM_ODYSSEY_SIDE_FLIP;
+}
 
 #ifdef __cplusplus
 }

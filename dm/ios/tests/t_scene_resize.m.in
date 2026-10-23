@@ -1,0 +1,192 @@
+// Execute the current frontend methods with synthetic scene/window/layer peers.
+// This tests adapter behavior, not UIKit delivery, Metal or game execution.
+#import <Foundation/Foundation.h>
+#import <CoreGraphics/CoreGraphics.h>
+#import <dispatch/dispatch.h>
+#include <assert.h>
+#include "dm_display_geometry.h"
+#define DM_GAME_DISPLAY_ASPECT (4.0/3.0)
+static int auditLiveDisplay;
+static double auditRequestedAspect;
+static int dm_odyssey_display_geometry(double width,double height,double top,double left,double bottom,double right) {
+    (void)top;(void)left;(void)bottom;(void)right;
+    if (!isfinite(width) || !isfinite(height) || width<=0 || height<=0 || width>16384 || height>16384) return 0;
+    double aspect=width/height;
+    auditRequestedAspect=aspect>=1 && aspect<=16.0/9 ? aspect : 0;
+    return auditRequestedAspect>0;
+}
+static double dm_odyssey_display_scene_aspect(void) {
+    return auditLiveDisplay && auditRequestedAspect>0 ? auditRequestedAspect : DM_GAME_DISPLAY_ASPECT;
+}
+typedef struct { CGFloat top,left,bottom,right; } UIEdgeInsets;
+@interface CATransaction : NSObject
++ (void)begin;
++ (void)setDisableActions:(BOOL)disabled;
++ (void)commit;
+@end
+@implementation CATransaction
++ (void)begin {}
++ (void)setDisableActions:(BOOL)disabled { (void)disabled; }
++ (void)commit {}
+@end
+@interface AuditGeometry : NSObject
+@property NSInteger interfaceOrientation;
+@end
+@implementation AuditGeometry
+@end
+@interface AuditScene : NSObject
+@property(strong) AuditGeometry *effectiveGeometry;
+@end
+@implementation AuditScene
+@end
+static void dm_motion_orientation(NSInteger orientation) { (void)orientation; }
+
+
+@interface UIScreen : NSObject
+@property CGFloat nativeScale;
+@property CGFloat scale;
+@end
+@implementation UIScreen
+@end
+@interface UIWindow : NSObject
+@property(strong) UIScreen *screen;
+@property(strong) AuditScene *windowScene;
+@end
+@implementation UIWindow
+@end
+@interface CAMetalLayer : NSObject
+@property(strong) id device;
+@property unsigned pixelFormat;
+@property BOOL framebufferOnly,opaque;
+@property CGFloat contentsScale;
+@property CGSize drawableSize;
+@end
+@implementation CAMetalLayer
+@end
+enum { MTLPixelFormatBGRA8Unorm=80 };
+static id MTLCreateSystemDefaultDevice(void) { return nil; }
+@interface UIColor : NSObject
++ (id)blackColor;
+@end
+@implementation UIColor
++ (id)blackColor { return nil; }
+@end
+@interface UIView : NSObject { CGRect _frame,_bounds; }
+@property(nonatomic) CGRect frame,bounds;
+@property(strong) UIWindow *window;
+@property(strong) CAMetalLayer *layer;
+@property(strong) id backgroundColor;
+@property UIEdgeInsets safeAreaInsets;
+@property unsigned layoutRequests;
++ (Class)layerClass;
+- (instancetype)initWithFrame:(CGRect)frame;
+- (void)layoutSubviews;
+- (void)didMoveToWindow;
+- (void)setNeedsLayout;
+@end
+@implementation UIView
+@synthesize frame=_frame,bounds=_bounds;
++ (Class)layerClass { return CAMetalLayer.class; }
+- (instancetype)initWithFrame:(CGRect)frame {
+    if ((self=[super init])) { self.layer=[[[self class] layerClass] new]; self.frame=frame; }
+    return self;
+}
+- (void)setFrame:(CGRect)frame { _frame=frame;_bounds=(CGRect){CGPointZero,frame.size}; }
+- (void)layoutSubviews {}
+- (void)didMoveToWindow {}
+- (void)setNeedsLayout { self.layoutRequests++; }
+@end
+@interface UIViewController : NSObject
+@property(strong) UIView *view;
+- (void)viewDidLayoutSubviews;
+- (void)viewSafeAreaInsetsDidChange;
+@end
+@implementation UIViewController
+- (void)viewDidLayoutSubviews {}
+- (void)viewSafeAreaInsetsDidChange {}
+@end
+static unsigned touchResets,historyResets,physicalPads=1,feedbackFocus=1;
+@interface Pad : UIView
+- (void)reset;
+- (void)suspendPads;
+@end
+@implementation Pad
+- (void)reset { touchResets++; }
+- (void)suspendPads { physicalPads=0;feedbackFocus=0; }
+@end
+static Pad *g_view;
+/* TOUCH_GEOMETRY_HOOK */
+void mtl_present_geometry_changed(void) { historyResets++; }
+@interface DmFPSOverlay : NSObject
+@property CGRect placedBounds;
+@property UIEdgeInsets placedInsets;
+@property unsigned placements;
+- (void)placeInBounds:(CGRect)bounds safeArea:(UIEdgeInsets)insets;
+@end
+@implementation DmFPSOverlay
+- (void)placeInBounds:(CGRect)bounds safeArea:(UIEdgeInsets)insets { self.placedBounds=bounds;self.placedInsets=insets;self.placements++; }
+@end
+/* GAME_VIEW */
+/* ROOT_INTERFACE */
+@implementation DmRootVC
+/* ROOT_LAYOUT */
+/* ROOT_SAFE_AREA */
+@end
+
+int main(void) { @autoreleasepool {
+    UIScreen *screen=[UIScreen new]; screen.nativeScale=3;screen.scale=3;
+    UIWindow *window=[UIWindow new];window.screen=screen;
+    DmRootVC *root=[DmRootVC new];root.view=[[UIView alloc] initWithFrame:CGRectMake(0,0,678,466)];root.view.window=window;
+    root.game=[[DmGameView alloc] initWithFrame:root.view.bounds];root.game.window=window;
+    root.pad=[Pad new];g_view=(Pad *)root.pad;root.fps=[DmFPSOverlay new];
+    const CGSize bounds[]={{678,466},{951,669},{466,678},{669,951},{1376,1032},{956,440}};
+    unsigned transitions=0;
+    for (unsigned repeat=0;repeat<12;repeat++) for (unsigned i=0;i<6;i++) {
+        root.view.bounds=CGRectMake(0,0,bounds[i].width,bounds[i].height);
+        root.view.safeAreaInsets=(UIEdgeInsets){9,20,7,22};
+        [root viewDidLayoutSubviews];[root.game layoutSubviews];
+        dm_display_geometry fit=dm_display_make(bounds[i].width,bounds[i].height,3,4.0/3);
+        assert(fabs(root.game.frame.size.width/root.game.frame.size.height-4.0/3)<1e-9);
+        assert(root.game.frame.origin.x==fit.picture.x && root.game.frame.origin.y==fit.picture.y);
+        assert(CGSizeEqualToSize(root.game.layer.drawableSize,CGSizeMake(fit.pixel_width,fit.pixel_height)));
+        assert(root.game.layer.contentsScale==3);
+        assert(CGRectEqualToRect(root.pad.frame,root.view.bounds));
+        assert(CGRectEqualToRect(root.fps.placedBounds,root.view.bounds));
+        assert(root.fps.placedInsets.left==20 && root.fps.placedInsets.right==22);
+        assert(touchResets==++transitions && historyResets==transitions);
+        [root viewDidLayoutSubviews];[root.game layoutSubviews];
+        assert(historyResets==transitions && touchResets==transitions);
+    }
+    CGSize prior=root.game.layer.drawableSize;CGRect picture=root.game.frame;
+    const CGSize invalid[]={{0,0},{678,0},{NAN,466},{678,INFINITY},{20000,20000}};
+    for (unsigned i=0;i<5;i++) {
+        root.view.bounds=(CGRect){CGPointZero,invalid[i]};[root viewDidLayoutSubviews];
+        assert(CGRectEqualToRect(root.game.frame,picture));
+        root.game.bounds=(CGRect){CGPointZero,invalid[i]};[root.game layoutSubviews];
+        assert(CGSizeEqualToSize(root.game.layer.drawableSize,prior));
+        assert(historyResets==transitions && touchResets==transitions);
+    }
+    root.view.bounds=CGRectMake(0,0,678,466);[root viewDidLayoutSubviews];[root.game layoutSubviews];transitions++;
+    prior=root.game.layer.drawableSize;
+    screen.nativeScale=2;[root viewDidLayoutSubviews];[root.game layoutSubviews];transitions++;
+    assert(!CGSizeEqualToSize(root.game.layer.drawableSize,prior));
+    assert(root.game.layer.contentsScale==2);
+    assert(historyResets==transitions && touchResets==transitions);
+    prior=root.game.layer.drawableSize;root.game.window=nil;[root.game layoutSubviews];
+    assert(CGSizeEqualToSize(root.game.layer.drawableSize,prior));assert(historyResets==transitions);
+    root.game.window=window;[root.game didMoveToWindow];assert(root.game.layoutRequests>0);
+    unsigned requests=root.pad.layoutRequests;[root viewSafeAreaInsetsDidChange];
+    assert(root.view.layoutRequests>0 && root.pad.layoutRequests==requests+1);
+    assert(physicalPads==1 && feedbackFocus==1);
+    printf("PASS: %u actual frontend adapter geometry transitions, invalid bounds, scale, touch-only reset and safe-area scheduling\n",transitions);
+    auditLiveDisplay=1;
+    for (unsigned i=0;i<40;i++) {
+        CGSize size=i&1 ? (CGSize){678,466} : (CGSize){951,669};
+        root.view.bounds=(CGRect){CGPointZero,size};[root viewDidLayoutSubviews];[root.game layoutSubviews];
+        assert(CGRectEqualToRect(root.game.frame,root.view.bounds));
+        assert(CGSizeEqualToSize(root.game.layer.drawableSize,CGSizeMake(size.width*2,size.height*2)));
+    }
+    assert(physicalPads==1 && feedbackFocus==1);
+    puts("PASS: 40 paired full-screen frontend transitions without margins");
+    return 0;
+} }

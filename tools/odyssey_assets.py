@@ -17,7 +17,7 @@ MODULES = {
     'sdk': '754cf4b581d749fbe3d457cf66497b141ef994cf592d247919d64a37dcc30d27',
 }
 REWRITTEN = {
-    'main': 'e7ec1b54dca92ce3afa24bcc7967dfa81f98c896e7aba85d70da07732ecaf785',
+    'main': '05214155b3568c8c7e3081f61c0f2e8ff55002e75d0b74e1dde5e62dc06b492f',
     'subsdk0': 'bc8cdf523557dce3789f2ba890998bf825e7ff102ea91fb1fd76d0f0f7c5db43',
     'sdk': 'f1f137f007d11574416e0262f42029ea31fc8656c44b56883a6abb08eae68875',
 }
@@ -44,8 +44,8 @@ def verify_extraction(extracted: Path) -> None:
 
 def prepare_assets(repo: Path, extracted: Path, rewritten: Path, output: Path, preset: str) -> dict:
     """Build and verify a separate camera/HUD/RomFS tree for one display preset."""
-    if preset not in ('ipad', 'iphone'):
-        raise ValueError('preset must be ipad or iphone')
+    if preset not in ('ipad', 'duo', 'iphone'):
+        raise ValueError('preset must be ipad, duo or iphone')
     extracted = outside_repo(extracted, repo)
     rewritten = outside_repo(rewritten, repo)
     output = outside_repo(output, repo)
@@ -69,7 +69,7 @@ def prepare_assets(repo: Path, extracted: Path, rewritten: Path, output: Path, p
         overlay = stage / 'overlay'
         # The camera helper also verifies every accepted takeoff observer guard.
         camera = phone.prepare_camera(rewritten, stage / 'phone-camera', repo / 'dm/host/hle_odyssey_feedback.c')
-        if preset == 'ipad':
+        if preset in ('ipad', 'duo'):
             receipt = pad.create_overlay(extracted / 'RomFS', overlay, extracted / 'ExeFS/main', stage / 'layout.json')
             patched = rewritten
         else:
@@ -110,7 +110,7 @@ def prepare_assets(repo: Path, extracted: Path, rewritten: Path, output: Path, p
             shutil.copy2(overlay / relative, target)
             if pad.sha(original.read_bytes()) != archive['source_sha256'] or pad.sha(target.read_bytes()) != archive['output_sha256']:
                 raise ValueError(f'Source/output integrity mismatch: {relative}')
-        record = {'preset': preset, 'aspect': '4:3' if preset == 'ipad' else '239:110',
+        record = {'preset': preset, 'aspect': '4:3' if preset in ('ipad', 'duo') else '239:110',
                   'main_build_id': pad.BUILD_ID, 'modules_sha256': MODULES,
                   'camera': camera, 'layouts': receipt, 'patched': str(patched), 'romfs': str(romfs)}
         # Replace staging prefixes only in our local receipt; original paths stay intact.

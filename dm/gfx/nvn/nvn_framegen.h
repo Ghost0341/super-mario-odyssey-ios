@@ -11,6 +11,10 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly) uint64_t ticket;
 @property(nonatomic, readonly) uint64_t gameFrame;
 @property(nonatomic, readonly) double enqueuedTime;
+// Logical geometry is immutable metadata of the source raster, including
+// native snapshots and generated midpoints; it never follows late scene state.
+@property(nonatomic, readonly) double logicalAspect;
+@property(nonatomic, readonly) uint64_t geometryGeneration;
 @end
 
 @interface NVNFrameGenCapture : NSObject
@@ -30,6 +34,8 @@ NS_ASSUME_NONNULL_BEGIN
                                       ticket:(uint64_t)ticket
                                    gameFrame:(uint64_t)frame
                                 enqueuedTime:(double)time
+                               logicalAspect:(double)aspect
+                          geometryGeneration:(uint64_t)generation
                                    waitEvent:(nullable id<MTLEvent>)event
                                    waitValue:(uint64_t)value;
 // A DIFFERENT serial worker owns processing/history. Returns [midpoint, source]

@@ -29,7 +29,20 @@ typedef struct {
     uint64_t updated_ns[2], sequence[2];
     uint64_t motion_samples, motion_updated_ns;
     uint64_t vibration_sends, motion_reads, motion_states_returned;
+    uint64_t motion_epoch;
+    unsigned motion_available;
 } dm_feedback_output;
+
+// Read-only native signal for a separate device-local sink. It does not claim
+// physical controller capabilities or change SDK/controller output. The sink
+// must enforce its own foreground, heartbeat, activation and hardware leases.
+typedef struct {
+    uint64_t epoch;
+    unsigned foreground, permitted;
+    dm_vibration_value value[2];
+    uint64_t updated_ns[2], sequence[2];
+} dm_feedback_native_output;
+void dm_feedback_native_poll(dm_feedback_native_output *out);
 
 // Every lifecycle/capability transition clears pending output and motion history.
 // Capture the returned epoch when binding a motion callback: old callbacks cannot
@@ -37,6 +50,9 @@ typedef struct {
 // publish disconnected before publishing the replacement.
 uint64_t dm_feedback_set_device(int connected, int foreground, unsigned capabilities, uint64_t now_ns);
 uint64_t dm_feedback_epoch(void);
+// Independently owned motion, including touch-only device sensors. Each call
+// invalidates sensor history/callbacks without changing actuator output.
+uint64_t dm_feedback_motion_begin(int enabled);
 // Keep a latched native value alive while the game actually presents. Without a
 // fresh game tick or a fresh value for 250 ms, physical rumble becomes silent.
 void dm_feedback_game_tick(uint64_t now_ns);

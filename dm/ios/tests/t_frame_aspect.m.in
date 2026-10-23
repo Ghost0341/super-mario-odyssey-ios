@@ -1,0 +1,119 @@
+// Synthetic peers execute the current viewport, metadata, history and epoch code.
+#import <Foundation/Foundation.h>
+#include <assert.h>
+#include <stdatomic.h>
+#include <pthread.h>
+#include "nvn_present_viewport.h"
+#include "nvn_frame_geometry.h"
+#undef TARGET_OS_SIMULATOR
+#define TARGET_OS_SIMULATOR 1 // Fixture excludes optional VideoToolbox work, not platform proof.
+#define DM_GAME_PRESENT_ASPECT (4.0/3.0)
+#define MLOG(...) ((void)0)
+typedef struct { double originX,originY,width,height,znear,zfar; } MTLViewport;
+/* VIEWPORT */
+
+@class NVNFGContext;
+@interface NVNFGSurface : NSObject { @public id rgb; void *pixelBuffer; }
+@end
+@implementation NVNFGSurface @end
+static unsigned modelAcquires;
+@interface NVNFGContext : NSObject { @public atomic_bool sessionReady,failed; }
+- (NVNFGSurface *)acquire:(BOOL)midpoint;
+@end
+@implementation NVNFGContext
+- (NVNFGSurface *)acquire:(BOOL)midpoint { assert(midpoint);modelAcquires++;return nil; }
+@end
+@interface NVNFGLease : NSObject
+@property(strong) NVNFGContext *context;
+@property(strong) NVNFGSurface *surface;
+@end
+@implementation NVNFGLease @end
+@interface NVNFrameGenOutput : NSObject
+@property(strong) id texture;
+@property BOOL generated;
+@property uint64_t ticket,gameFrame,epoch,geometryGeneration;
+@property double enqueuedTime,logicalAspect;
+@property(strong) NVNFGLease *lease;
+@end
+@implementation NVNFrameGenOutput @end
+@interface NVNFrameGenCapture : NSObject
+@property(strong) NVNFrameGenOutput *sourceOutput;
+@end
+@implementation NVNFrameGenCapture @end
+/* OUTPUT */
+@interface NVNFrameGenerator : NSObject {
+    NVNFrameGenCapture *_previous;
+    atomic_ullong _epoch,_nativeOnly,_poolMisses;
+}
+@property BOOL interpolationEnabled,suspended;
+- (NSArray<NVNFrameGenOutput *> *)processCapture:(NVNFrameGenCapture *)capture;
+@end
+@implementation NVNFrameGenerator
+- (instancetype)init { if((self=[super init])){atomic_init(&_epoch,1);self.interpolationEnabled=YES;}return self; }
+/* PROCESS */
+@end
+
+static NSMutableArray *g_fg_captures,*g_fg_outputs;
+static NVNFrameGenOutput *g_fg_latest;
+static uint64_t g_fg_epoch=1,g_fg_last_native;
+static double g_fg_last_submit,g_fg_last_target,g_fg_refresh;
+static int g_fg_slow,g_fg_have_source_geometry;
+static double g_fg_source_aspect;
+static uint64_t g_fg_source_generation;
+static pthread_cond_t g_pq_cv=PTHREAD_COND_INITIALIZER;
+// Native FIFO/ownership sentinels are deliberately not visible to the helpers.
+static uint64_t g_pq_done=3,g_pq_read=7,g_pq_in=9;
+static int g_pq_inflight=2,g_native_present_busy=1;
+/* INVALIDATE */
+/* ADMIT_GEOMETRY */
+static NVNFrameGenCapture *capture(NVNFGLease *lease,uint64_t ticket,double aspect,uint64_t generation) {
+    NVNFrameGenCapture *c=[NVNFrameGenCapture new];
+    c.sourceOutput=fg_output(lease,NO,ticket,ticket,ticket/60.0,1,aspect,generation);return c;
+}
+int main(void) { @autoreleasepool {
+    g_fg_captures=[NSMutableArray new];g_fg_outputs=[NSMutableArray new];
+    // The old raster retains OLD geometry after the window changes.
+    double closed=678.0/466,open=951.0/669;
+    MTLViewport old=present_viewport(1600,900,951,669,closed);
+    assert(old.height<669 && old.width==951);
+    MTLViewport current=present_viewport(1600,900,951,669,open);
+    assert(current.originX==0 && current.originY==0 && current.width==951 && current.height==669);
+    // The generic raster-aspect fallback remains available with explicit0.
+    MTLViewport fallback=present_viewport(1600,900,951,669,0);
+    assert(fallback.height<669 && fallback.width==951);
+    uint64_t epoch=fg_admit_geometry_locked(closed,1);assert(epoch==1);
+    for(unsigned i=0;i<1000;i++) {
+        // An external request can invalidate owned history before the queued
+        // old-geometry raster arrives. The source transition still resets again.
+        fg_invalidate_locked();uint64_t requestedEpoch=g_fg_epoch;
+        assert(fg_admit_geometry_locked(g_fg_source_aspect,g_fg_source_generation)==requestedEpoch);
+        [g_fg_captures addObject:@1];[g_fg_outputs addObject:@2];
+        g_fg_latest=[NVNFrameGenOutput new];
+        double aspect=i&1?closed:open;uint64_t generation=i+2;
+        assert(fg_admit_geometry_locked(aspect,generation)==requestedEpoch+1);
+        assert(!g_fg_captures.count && !g_fg_outputs.count && !g_fg_latest);
+        assert(fg_admit_geometry_locked(aspect,generation)==requestedEpoch+1);
+        assert(g_pq_done==3 && g_pq_read==7 && g_pq_in==9 && g_pq_inflight==2 && g_native_present_busy==1);
+    }
+    // Same aspect, different insets/generation is also a history discontinuity.
+    epoch=g_fg_epoch;
+    fg_admit_geometry_locked(g_fg_source_aspect,g_fg_source_generation+1);assert(g_fg_epoch==epoch+1);
+    assert(!nvn_frame_geometry_equal(NAN,1,NAN,1));
+    assert(!nvn_frame_geometry_equal(INFINITY,1,INFINITY,1));
+    assert(!nvn_frame_geometry_equal(-1,1,-1,1));
+    NVNFGSurface *surface=[NVNFGSurface new];surface->rgb=@"native RGB";surface->pixelBuffer=(void *)1;
+    NVNFGContext *context=[NVNFGContext new];atomic_init(&context->sessionReady,true);atomic_init(&context->failed,false);
+    NVNFGLease *lease=[NVNFGLease new];lease.context=context;lease.surface=surface;
+    NVNFrameGenOutput *native=fg_output(lease,NO,3,8,.1,1,closed,41);
+    NVNFrameGenOutput *midpoint=fg_output(lease,YES,3,8,.09,1,native.logicalAspect,native.geometryGeneration);
+    assert(native.texture==surface->rgb && midpoint.texture==surface->rgb);
+    assert(native.logicalAspect==closed && midpoint.logicalAspect==closed && midpoint.geometryGeneration==41);
+    NVNFrameGenerator *model=[NVNFrameGenerator new];
+    [model processCapture:capture(lease,1,closed,1)];assert(modelAcquires==0);
+    [model processCapture:capture(lease,2,closed,2)];assert(modelAcquires==0); // Insets changed.
+    [model processCapture:capture(lease,3,closed,2)];assert(modelAcquires==1);
+    [model processCapture:capture(lease,4,open,2)];assert(modelAcquires==1); // Camera/HUD aspect changed.
+    [model processCapture:capture(lease,5,open,2)];assert(modelAcquires==2);
+    puts("PASS: 1000 queued geometry transitions, native ownership, immutable output metadata and actual model geometry discontinuities");
+    return 0;
+} }

@@ -13,8 +13,8 @@ static void *producer(void *unused) {
     (void)unused;
     const double acc[3] = {0, 0, -1}, gyro[3] = {0, .1, 0};
     for (int i = 0; i < 20000; i++) {
-        uint64_t e = dm_feedback_epoch();
-        dm_feedback_motion_push(e, acc, gyro, NULL, tick());
+        dm_feedback_output state; dm_feedback_poll(tick(), &state);
+        dm_feedback_motion_push(state.motion_epoch, acc, gyro, NULL, tick());
     }
     return NULL;
 }
@@ -36,6 +36,7 @@ static void *lifecycle(void *unused) {
     (void)unused;
     for (int i = 0; i < 2000; i++) {
         dm_feedback_set_device(i & 1, !(i % 3), 7, tick());
+        dm_feedback_motion_begin(i & 1);
         dm_feedback_game_tick(tick());
     }
     return NULL;

@@ -197,6 +197,13 @@ CUTS = {
 # ---- Registered observation gates: {NSO build ID: [(offset, number, original instruction word, reason)]}. Numbers match OBS_* in the host's hle.h;
 # the original instruction must be position independent (no PC-relative / branch / anything involving x18 or tpidr), asserted offline; when the host has no callback attached the gate block goes in and out once and returns ----
 OBS = {
+  # Odyssey 1.4.1: set's post-fovy point carries its projection in x19;
+  # AL calcMtx carries its full AL object in x0. Do not hook generic sead getters:
+  # their smaller PerspectiveProjection objects have no AL frustum extensions.
+  'b424be150a8e7d78701cbe7a439d9ebf': [
+    (0x73de9c, 21, '1e2c1008', 'live projection after setFovy; x19 is al::Projection'),
+    (0x73da10, 22, 'a9be4ff4', 'al::Projection calcMtx entry; full typed AL object in x0'),
+  ],
   # Metroid Dread 2.1.0 main: the movie player posts "link / unlink holders" requests into the dispatcher thread's request ring (main+0x222cc8) and goes on without waiting for them (after an unlink it frees the wrapper object and builds a new one in place).
   # On hardware the dispatcher thread (priority 30, core 0 only) preempts the main thread (priority 44, core 0) at once and finishes first; the host waits for the ring to empty after each post (hle_movie.c movie_ring_wait). The gates sit on the add x22, x22, #8 after the bl
   '646761f643afebb379edd5e6a5151af2': [

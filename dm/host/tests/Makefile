@@ -4,7 +4,10 @@ B = build
 # tests that use the game profile need GAME=<base game title ID> (there is no default game); GINC only expands when used, so tests without the profile build as before
 GINC = $(if $(strip $(GAME)),-I../gen/$(GAME) -I../../games/$(GAME),$(error GAME is not set: make GAME=<base game title ID>: $(shell python3 ../../games/game.py list | awk -F'\t' '{printf "%s (%s)  ", $$1, $$3}')))
 GAME_H = ../gen/$(GAME)/game_profile.h
-run: $(B)/t_feedback $(B)/t_touch $(B)/t_oe $(B)/t_fs $(B)/t_fs_commit_list $(B)/t_thread_leak $(B)/t_fs_case $(B)/t_audio $(B)/t_audio_spsc $(B)/t_swkbd $(B)/t_altstack $(B)/t_condvar $(B)/t_condvar_old
+run: $(B)/t_touch_controls $(B)/t_device_haptics $(B)/t_motion_source $(B)/t_feedback $(B)/t_touch $(B)/t_oe $(B)/t_fs $(B)/t_fs_commit_list $(B)/t_thread_leak $(B)/t_fs_case $(B)/t_audio $(B)/t_audio_spsc $(B)/t_swkbd $(B)/t_altstack $(B)/t_condvar $(B)/t_condvar_old
+	$(B)/t_touch_controls
+	$(B)/t_device_haptics
+	$(B)/t_motion_source
 	$(B)/t_feedback
 	$(B)/t_touch
 	$(B)/t_oe 2>/dev/null
@@ -18,6 +21,12 @@ run: $(B)/t_feedback $(B)/t_touch $(B)/t_oe $(B)/t_fs $(B)/t_fs_commit_list $(B)
 	$(B)/t_altstack
 	$(B)/t_condvar
 	$(B)/t_condvar_old
+$(B)/t_motion_source: t_motion_source.c ../hle_feedback.c ../dm_feedback.h ../dm_motion_source.h | $(B)
+	clang -std=c11 -O1 -g -Wall -Wextra -Werror -I.. -o $@ t_motion_source.c ../hle_feedback.c
+$(B)/t_device_haptics: t_device_haptics.c ../hle_feedback.c ../dm_feedback.h ../dm_device_haptics_policy.h ../dm_feedback_policy.h ../odyssey_feedback.h | $(B)
+	clang -std=c11 -O1 -g -Wall -Wextra -Werror -I.. -o $@ t_device_haptics.c ../hle_feedback.c
+$(B)/t_touch_controls: t_touch_controls.c ../dm_touch_controls.h | $(B)
+	clang -std=c11 -O1 -g -Wall -Wextra -Werror -I.. -o $@ t_touch_controls.c
 $(GAME_H):
 	$(MAKE) -C .. game_profile GAME=$(GAME)
 $(B)/t_feedback: t_feedback.c ../hle_feedback.c ../dm_feedback.h | $(B)

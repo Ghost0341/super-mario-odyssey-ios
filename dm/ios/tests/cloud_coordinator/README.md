@@ -35,3 +35,10 @@ These tests validate the coordinator's local behavior and controlled callback
 interleavings. They do not establish provisioning/CloudKit schema availability,
 real iCloud delivery, or device background execution time. Long real network
 timeouts are not exercised.
+
+Persistence regressions use real Foundation atomic-write failures (a directory
+at the state/journal file target), then repair the fixture and retry. They cover
+account-pin failure, server-confirmed ancestry persistence with a newer commit,
+newest-journal coalescing/restart, import state/journal recovery without blank
+replacement, and account changes after a pending acknowledgement. Local data
+is synthetic; no disk filling, real account or device is used.

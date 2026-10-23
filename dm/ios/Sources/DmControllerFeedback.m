@@ -2,12 +2,15 @@
 #import <UIKit/UIKit.h>
 #import <CoreHaptics/CoreHaptics.h>
 #import "DmControllerFeedback.h"
+#import "DmMotion.h"
+#import "DmDeviceHaptics.h"
 #include <stdatomic.h>
 #include <math.h>
 #include "dm.h"
 #include "dm_feedback.h"
 #include "dm_feedback_policy.h"
 #include "odyssey_feedback.h"
+#include "odyssey_local_feedback.h"
 
 static dispatch_queue_t queue, diagnostics, triggerQueue;
 static dispatch_source_t timer;
@@ -15,7 +18,6 @@ static char queueKey;
 static GCController *selected;
 static BOOL active, stereo;
 static unsigned caps;
-static _Atomic uint64_t motionEpoch, motionCount;
 static CHHapticEngine *engines[2];
 static id<CHHapticPatternPlayer> players[2];
 static CHHapticPattern *pattern;
@@ -191,7 +193,7 @@ static void report(dm_feedback_output sample, uint64_t now) {
         @"controller":selected.vendorName ?: @"none", @"build":NSBundle.mainBundle.infoDictionary[@"CFBundleVersion"] ?: @"unknown",
         @"connected":@(selected != nil), @"foreground":@(active), @"stereoHaptics":@(stereo),
         @"adaptiveTriggers":@(dualsense() != nil), @"motionAvailable":@(selected.motion.hasRotationRate),
-        @"motionSamples":@(atomic_load(&motionCount)), @"motionSamplesAccepted":@(sample.motion_samples),
+        @"motionSources":dm_motion_diagnostics(), @"motionSamples":@(sample.motion_samples), @"motionSamplesAccepted":@(sample.motion_samples),
         @"gameMotionReadCalls":@(sample.motion_reads), @"gameMotionStatesReturned":@(sample.motion_states_returned),
         @"nativeVibrationSendCalls":@(sample.vibration_sends),
         @"epoch":@(sample.epoch), @"nativeSequence":@[@(sample.sequence[0]), @(sample.sequence[1])],
@@ -235,9 +237,9 @@ static void tick(void) {
     dm_odyssey_feedback_event event;
     while (dm_odyssey_feedback_next(&event)) {
         now = now_ns(); // The guest may publish after the tick's initial timestamp.
-        if (live && (event.kind == DM_ODYSSEY_LONG_JUMP || event.kind == DM_ODYSSEY_ROLLING_JUMP ||
-                     event.kind == DM_ODYSSEY_BACKFLIP || event.kind == DM_ODYSSEY_WALL_JUMP ||
-                     event.kind == DM_ODYSSEY_SIDE_FLIP) && event.timestamp_ns <= now &&
+        // Fan out one drained event; the local sink never steals controller cues.
+        dm_device_haptics_observe(event, now);
+        if (live && dm_odyssey_feedback_controller_kind(event.kind) && event.timestamp_ns <= now &&
             now - event.timestamp_ns < 90000000ull && event.timestamp_ns > jumpAt) {
             jumpAt = event.timestamp_ns; jumpSequence = event.sequence; jumpKind = event.kind;
             uint64_t count;
@@ -265,7 +267,8 @@ static void tick(void) {
                 case DM_ODYSSEY_BACKFLIP: jump = dm_feedback_backflip(jumpAt, now, side); break;
                 case DM_ODYSSEY_WALL_JUMP: jump = dm_feedback_wall_jump(jumpAt, now, side); break;
                 case DM_ODYSSEY_SIDE_FLIP: jump = dm_feedback_side_flip(jumpAt, now, side); break;
-                default: jump = dm_feedback_long_jump(jumpAt, now, side); break;
+                case DM_ODYSSEY_LONG_JUMP: case DM_ODYSSEY_ROLLING_JUMP: jump=dm_feedback_long_jump(jumpAt,now,side); break;
+                default: jump=(dm_handle_effect){0}; break;
             }
             if (jump.intensity > value[side].intensity) value[side] = jump;
         }
@@ -274,8 +277,14 @@ static void tick(void) {
     }
     if (stereo) { handle_output(0, value[0], now); handle_output(1, value[1], now); }
     else { handle_output(0, value[value[1].intensity > value[0].intensity ? 1 : 0], now); }
+    // Dedicated local queue cannot evict or enter the controller jumpKind path.
+    while (dm_odyssey_local_feedback_next(&event)) dm_device_haptics_observe(event,now_ns());
+    now=now_ns();
+    dm_device_haptics_tick(now, frameAt);
     report(sample, now);
 }
+static void publish_device(void);
+static void refresh_output_activity(void);
 static void init_feedback(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -283,39 +292,27 @@ static void init_feedback(void) {
         diagnostics = dispatch_queue_create("odyssey.controller-diagnostics", dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0));
         triggerQueue = dispatch_queue_create("odyssey.controller-trigger-deadlines", dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INTERACTIVE, 0));
         dispatch_queue_set_specific(queue, &queueKey, &queueKey, NULL);
+        dm_device_haptics_initialize(queue, diagnostics, ^{ refresh_output_activity(); });
         active = UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
         timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
         dispatch_source_set_timer(timer, DISPATCH_TIME_FOREVER, 8 * NSEC_PER_MSEC, NSEC_PER_MSEC);
         dispatch_source_set_event_handler(timer, ^{ @autoreleasepool { tick(); } });
         dispatch_resume(timer);
+        on_queue(^{ publish_device(); });
     });
 }
-static void stop_motion(void) {
-    atomic_store(&motionEpoch, 0);
-    selected.motion.valueChangedHandler = nil;
-    if (selected.motion.sensorsRequireManualActivation) selected.motion.sensorsActive = NO;
-}
-static void bind_motion(uint64_t epoch) {
-    GCMotion *motion = selected.motion;
-    if (!active || !motion.hasRotationRate) return;
-    atomic_store(&motionEpoch, epoch);
-    if (motion.sensorsRequireManualActivation) motion.sensorsActive = YES;
-    motion.valueChangedHandler = ^(GCMotion *v) {
-        if (atomic_load(&motionEpoch) != epoch) return;
-        GCAcceleration a = v.acceleration;
-        if (v.hasGravityAndUserAcceleration) { a.x = v.gravity.x + v.userAcceleration.x; a.y = v.gravity.y + v.userAcceleration.y; a.z = v.gravity.z + v.userAcceleration.z; }
-        double acc[3] = {a.x, a.y, a.z}, angular[3] = {v.rotationRate.x, v.rotationRate.y, v.rotationRate.z};
-        // The portable layer fuses gyro/gravity in Switch coordinates. Apple
-        // attitude's reference convention need not be assumed equivalent.
-        if (dm_feedback_motion_push(epoch, acc, angular, NULL, now_ns())) atomic_fetch_add(&motionCount, 1);
-    };
+static void refresh_output_activity(void) {
+    dm_device_haptics_context(active, selected != nil, now_ns());
+    BOOL running = active && (selected || dm_device_haptics_enabled());
+    dm_odyssey_feedback_set_active(running);
+    dm_odyssey_local_feedback_set_active(dm_device_haptics_enabled());
+    dispatch_source_set_timer(timer, running ? dispatch_time(DISPATCH_TIME_NOW, 0) : DISPATCH_TIME_FOREVER,
+                             8 * NSEC_PER_MSEC, NSEC_PER_MSEC);
 }
 static void publish_device(void) {
-    uint64_t epoch = dm_feedback_set_device(selected != nil, active, caps, now_ns());
-    dm_odyssey_feedback_set_active(selected && active);
-    bind_motion(epoch);
-    dispatch_source_set_timer(timer, selected && active ? dispatch_time(DISPATCH_TIME_NOW, 0) : DISPATCH_TIME_FOREVER,
-                             8 * NSEC_PER_MSEC, NSEC_PER_MSEC);
+    dm_feedback_set_device(selected != nil, active, caps, now_ns());
+    refresh_output_activity();
+    dm_motion_controller(selected, active);
     reportAt = 0;
     dm_feedback_output sample; dm_feedback_poll(now_ns(), &sample); report(sample, now_ns());
 }
@@ -324,14 +321,14 @@ void dm_controller_feedback_attach(GCController *controller) {
     on_queue(^{
         if (selected == controller) return;
         dm_odyssey_feedback_set_active(0);
-        stop_motion(); quiet();
+        quiet();
         dm_feedback_set_device(0, active, 0, now_ns());
         selected = controller;
         NSSet *localities = controller.haptics.supportedLocalities;
         stereo = [localities containsObject:GCHapticsLocalityLeftHandle] && [localities containsObject:GCHapticsLocalityRightHandle];
         caps = controller.haptics ? DM_FEEDBACK_RUMBLE_LEFT | DM_FEEDBACK_RUMBLE_RIGHT : 0;
         if (controller.motion.hasRotationRate) caps |= DM_FEEDBACK_MOTION;
-        retry[0] = retry[1] = 0; atomic_store(&motionCount, 0);
+        retry[0] = retry[1] = 0;
         triggers_off(); publish_device();
         LOG("controller-feedback: %s stereo=%d adaptive=%d motion=%d", controller.vendorName.UTF8String ?: "none", stereo, dualsense() != nil, controller.motion.hasRotationRate);
     });
@@ -340,7 +337,7 @@ void dm_controller_feedback_focus(int foreground) {
     init_feedback();
     on_queue(^{
         if (active == (foreground != 0)) return;
-        stop_motion(); quiet(); active = foreground != 0; publish_device();
+        quiet(); active = foreground != 0; publish_device();
     });
 }
 void dm_controller_feedback_travel(float left, float right) {
@@ -349,4 +346,11 @@ void dm_controller_feedback_travel(float left, float right) {
         travel[0] = isfinite(left) ? dm_feedback_clamp(left, 0, 1) : 0;
         travel[1] = isfinite(right) ? dm_feedback_clamp(right, 0, 1) : 0;
     });
+}
+UIButton *dm_controller_feedback_device_settings_button(void) {
+    init_feedback();
+    return dm_device_haptics_settings_button();
+}
+UIMenu *dm_controller_feedback_device_settings_menu(void) {
+    init_feedback(); return dm_device_haptics_settings_menu();
 }

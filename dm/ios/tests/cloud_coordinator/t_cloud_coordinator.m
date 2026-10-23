@@ -152,6 +152,14 @@ static NSString *Status(TestCoordinator *c) {
 }
 static void Stop(TestCoordinator *c) { OnMain(^{[c.timer invalidate];c.timer=nil;}); }
 static void Begin(NSString *name) { ++scenarios;printf("scenario: %s\n",name.UTF8String); }
+static void BlockFile(NSString *path) {
+    if([NSFileManager.defaultManager fileExistsAtPath:path])
+        Check([NSFileManager.defaultManager removeItemAtPath:path error:NULL],@"remove fixture target before write fault");
+    Check([NSFileManager.defaultManager createDirectoryAtPath:path withIntermediateDirectories:NO attributes:nil error:NULL],@"directory at file target forces a real Foundation write failure");
+}
+static void RepairFile(NSString *path) {
+    Check([NSFileManager.defaultManager removeItemAtPath:path error:NULL],@"remove write-fault directory");
+}
 
 static void Run(void) { @autoreleasepool {
     NSString *root=[NSTemporaryDirectory() stringByAppendingPathComponent:[@"dm-coordinator-" stringByAppendingString:NSUUID.UUID.UUIDString]];
@@ -353,6 +361,86 @@ static void Run(void) { @autoreleasepool {
     c.state[@"baseDigest"]=a[@"digest"];[c publish:a];c.started=YES;[c checkForChanges];Drain(c);
     Check([Status(c) isEqual:@"restart-to-import"]&&Same(c.profile,a),@"cloud-ahead branch waits until next boot");
     Check([c.state[@"imports"] integerValue]==0&&[c.state[@"baseDigest"] isEqual:a[@"digest"]]&&db.modifications==0,@"runtime check neither imports nor advances base");Stop(c);
+
+    Begin(@"failed account-state write blocks cloud mutation until local persistence recovers");
+    c=Coordinator([root stringByAppendingPathComponent:@"state-pin-failure"],&db);
+    Check(DmRestoreSave(a,c.profile,[c.directory stringByAppendingPathComponent:@"Backups"],NULL),@"state fault local progress");
+    NSString *statePath=[c.directory stringByAppendingPathComponent:@"state.plist"];
+    BlockFile(statePath);[c publish:a];c.started=YES;[c checkForChanges];Drain(c);
+    Check(db.modifications==0&&db.fetches==0&&!c.state[@"cloudUser"]&&!c.state[@"baseDigest"],@"undurable account pin cannot fetch/mutate cloud or advance ancestry");
+    Check([Status(c) isEqual:@"pending"]&&Same(c.profile,a),@"failed pin preserves local progress and stays pending");
+    RepairFile(statePath);[c checkForChanges];Drain(c);
+    Check(db.modifications==1&&[c.state[@"baseDigest"] isEqual:a[@"digest"]]&&[Status(c) isEqual:@"synced"],@"ordinary retry persists pin and confirms the same progress");Stop(c);
+
+    Begin(@"confirmed upload with failed state write retries ancestry before a newer commit");
+    c=Coordinator([root stringByAppendingPathComponent:@"state-ack-failure"],&db);
+    Check(DmRestoreSave(a,c.profile,[c.directory stringByAppendingPathComponent:@"Backups"],NULL),@"ack fault local A");
+    NSString *ackState=[c.directory stringByAppendingPathComponent:@"state.plist"];
+    db.beforeModify=^(CKModifyRecordsOperation *op){(void)op;BlockFile(ackState);};
+    [c publish:a];c.started=YES;[c checkForChanges];Drain(c);
+    Check(db.modifications==1&&[db.serverSave[@"digest"] isEqual:a[@"digest"]],@"server really confirmed A before local state failed");
+    Check(!c.state[@"baseDigest"]&&[c.state[@"uploads"] integerValue]==0&&[Status(c) isEqual:@"pending"],@"failed durable acknowledgement neither advances base/counter nor claims synced");
+    Check(DmRestoreSave(b,c.profile,[c.directory stringByAppendingPathComponent:@"Backups"],NULL),@"newer committed B after pending ack");
+    [c committed:b];Drain(c);Check(db.modifications==1&&Same(c.profile,b),@"newer save cannot bypass failed confirmed ancestry persistence");
+    db.beforeModify=nil;RepairFile(ackState);[c checkForChanges];Drain(c);
+    Check(db.modifications==2&&[db.serverSave[@"digest"] isEqual:b[@"digest"]]&&[c.state[@"baseDigest"] isEqual:b[@"digest"]],@"retry persists A ancestry then CAS uploads B without a false conflict");
+    Check([c.state[@"uploads"] integerValue]==2&&[Status(c) isEqual:@"synced"],@"confirmed counters advance once each after durable recovery");Stop(c);
+
+    Begin(@"failed journal retains newest commits and retries without another game save");
+    c=Coordinator([root stringByAppendingPathComponent:@"journal-failure"],&db);[c publish:a];c.started=YES;[c checkForChanges];Drain(c);
+    NSString *journalPath=[c.directory stringByAppendingPathComponent:@"last-committed.plist"];
+    BlockFile(journalPath);
+    Check(DmRestoreSave(b,c.profile,[c.directory stringByAppendingPathComponent:@"Backups"],NULL),@"journal fault local B");[c committed:b];Drain(c);
+    Check(db.modifications==1&&[db.serverSave[@"digest"] isEqual:a[@"digest"]]&&Same(c.profile,b),@"failed journal defers upload while retaining committed B");
+    Check([Status(c) isEqual:@"pending"],@"journal failure cannot report synced");
+    Check(DmRestoreSave(cSave,c.profile,[c.directory stringByAppendingPathComponent:@"Backups"],NULL),@"journal fault newer local C");[c committed:cSave];Drain(c);
+    Check(db.modifications==1&&Same(c.profile,cSave),@"newer failed journal also stays local");
+    RepairFile(journalPath);[c checkForChanges];Drain(c);
+    NSDictionary *retriedJournal=DmDecodeSave([NSData dataWithContentsOfFile:journalPath],NULL);
+    Check([retriedJournal[@"digest"] isEqual:cSave[@"digest"]]&&[db.serverSave[@"digest"] isEqual:cSave[@"digest"]],@"retry journals and uploads the newest complete snapshot");
+    Check(db.modifications==2&&![db.uploadedDigests containsObject:b[@"digest"]]&&[Status(c) isEqual:@"synced"],@"superseded B is not uploaded or allowed to replace C journal");Stop(c);
+
+    Begin(@"reopening with a blocked journal cannot bypass the persistence gate");
+    NSString *reopenRoot=[root stringByAppendingPathComponent:@"journal-reopen"];
+    c=Coordinator(reopenRoot,&db);[c publish:a];c.started=YES;[c checkForChanges];Drain(c);
+    NSString *reopenJournal=[c.directory stringByAppendingPathComponent:@"last-committed.plist"];BlockFile(reopenJournal);
+    Check(DmRestoreSave(b,c.profile,[c.directory stringByAppendingPathComponent:@"Backups"],NULL),@"reopen committed B");[c committed:b];Drain(c);Stop(c);
+    c=Coordinator(reopenRoot,&db);[db setServerSave:a];UIViewController *reopenScreen=[UIViewController new];dispatch_semaphore_t reopened=dispatch_semaphore_create(0);
+    OnMain(^{[c prepareForController:reopenScreen completion:^{dispatch_semaphore_signal(reopened);}];});Wait(reopened,@"cached local progress may boot while journal is blocked");Drain(c);
+    Check(c.started&&Same(c.profile,b)&&db.modifications==0&&[Status(c) isEqual:@"pending"],@"fresh coordinator keeps valid local save but does not upload without a journal");
+    OnMain(^{Check(!reopenScreen.presentedViewController,@"valid cached progress needs no destructive-start prompt");});
+    RepairFile(reopenJournal);[c checkForChanges];Drain(c);
+    Check(db.modifications==1&&[db.serverSave[@"digest"] isEqual:b[@"digest"]]&&[Status(c) isEqual:@"synced"],@"post-reopen retry journals then uploads without a new commit");Stop(c);
+
+    Begin(@"imported progress survives failed acknowledgement state and keeps its counter on retry");
+    c=Coordinator([root stringByAppendingPathComponent:@"import-state-failure"],&db);[db setServerSave:b];
+    NSString *importState=[c.directory stringByAppendingPathComponent:@"state.plist"];
+    db.beforeAssetFetch=^{BlockFile(importState);};UIViewController *importScreen=[UIViewController new];dispatch_semaphore_t imported=dispatch_semaphore_create(0);
+    OnMain(^{[c prepareForController:importScreen completion:^{dispatch_semaphore_signal(imported);}];});Wait(imported,@"verified restored progress can boot despite pending sync-state write");Drain(c);
+    Check(c.started&&Same(c.profile,b)&&[c.state[@"imports"] integerValue]==0&&!c.state[@"baseDigest"]&&db.modifications==0,@"failed import ack keeps restored tree but no undurable base/counter");
+    Check([Status(c) isEqual:@"pending"],@"import state failure is pending, not synced");
+    db.beforeAssetFetch=nil;RepairFile(importState);[c checkForChanges];Drain(c);
+    Check([c.state[@"imports"] integerValue]==1&&[c.state[@"baseDigest"] isEqual:b[@"digest"]]&&db.modifications==0,@"retry retains one confirmed import without uploading or restoring again");Stop(c);
+
+    Begin(@"fresh imported save can play offline while its journal write is blocked");
+    c=Coordinator([root stringByAppendingPathComponent:@"import-journal-failure"],&db);[db setServerSave:b];
+    NSString *importJournal=[c.directory stringByAppendingPathComponent:@"last-committed.plist"];BlockFile(importJournal);
+    UIViewController *journalScreen=[UIViewController new];dispatch_semaphore_t journalBoot=dispatch_semaphore_create(0);
+    OnMain(^{[c prepareForController:journalScreen completion:^{dispatch_semaphore_signal(journalBoot);}];});Wait(journalBoot,@"restored local progress boots after journal error");Drain(c);
+    Check(c.started&&Same(c.profile,b)&&!c.state[@"baseDigest"]&&[Status(c) isEqual:@"pending"],@"restored progress stays recoverable without false sync acknowledgement");
+    OnMain(^{Check(!journalScreen.presentedViewController,@"restored valid local tree never offers a blank replacement");});
+    RepairFile(importJournal);[c checkForChanges];Drain(c);
+    Check([c.state[@"baseDigest"] isEqual:b[@"digest"]]&&db.modifications==0&&[Status(c) isEqual:@"synced"],@"journal recovery acknowledges the existing remote branch without upload");Stop(c);
+
+    Begin(@"account change after a pending confirmed state never publishes into another account");
+    c=Coordinator([root stringByAppendingPathComponent:@"pending-account-change"],&db);[c publish:a];c.started=YES;
+    NSString *changedState=[c.directory stringByAppendingPathComponent:@"state.plist"];
+    db.beforeModify=^(CKModifyRecordsOperation *op){(void)op;BlockFile(changedState);};[c checkForChanges];Drain(c);
+    Check(db.modifications==1&&[Status(c) isEqual:@"pending"],@"account-change fixture has a server-confirmed pending acknowledgement");
+    db.beforeModify=nil;RepairFile(changedState);((FakeContainer *)(id)c.container).user=@"different-private-user";
+    [c committed:b];Drain(c);
+    Check(db.modifications==1&&[c.state[@"cloudUser"] isEqual:@"fixture-private-user"]&&[c.state[@"baseDigest"] isEqual:a[@"digest"]],@"retry persists only original account ancestry and rejects the changed account");
+    Check([[c snapshot][@"digest"] isEqual:b[@"digest"]]&&[Status(c) isEqual:@"pending"],@"new local branch remains available without a cross-account upload");Stop(c);
 
     printf("cloud coordinator: %lu scenarios, %lu checks passed\n",(unsigned long)scenarios,(unsigned long)checks);
     [NSFileManager.defaultManager removeItemAtPath:root error:NULL];exit(0);

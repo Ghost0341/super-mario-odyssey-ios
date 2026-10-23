@@ -2,6 +2,13 @@
 
 ## Accepted physical-device behavior
 
+- Current M5 iPad update: the player confirmed the top-left FPS counter hides
+  on tap and reappears from the same corner. Before launch, the installed build
+  and all protected save, cloud, preference, environment and pipeline files
+  matched the fresh backup. Device-motion samples reached guest six-axis reads
+  without sensor errors, and the current runtime acknowledged iCloud sync.
+  Those runtime observations do not certify physical aim/motion in every
+  orientation or a new cross-device save round trip.
 - M5 iPad Pro 13-inch: 4:3 world/HUD proportions, gameplay, sound and controls.
 - iPhone 17 Pro Max: 239:110 gameplay/HUD and sound/controls; generated
   presentation observed around 120 displayed FPS in a gameplay sample.
@@ -17,6 +24,66 @@
 
 ## Known limits
 
+- Shared top-left FPS counter: real game-free Catalyst UIKit fixture passes81
+  checks for hidden/reveal hit testing, both landscape safe areas, compact L3
+  clearance, normal ZL/L3 centers, saved visibility, accessibility, FG labeling
+  and stale/reset sampling. Explicit corner taps take priority over expanded
+  shoulder hit rims; the target never expands beyond80×22pt. Physical-device
+  hide/reveal was accepted on the M5 iPad; delivery to the phone remains pending.
+  Gamepad/settings/gyro/controller/haptic policies
+  are unchanged from19.
+
+- Optional device-local Core Haptics is a separate sink for the original native
+  bands and verified takeoff composition. It never changes controller gains,
+  textures or trigger curves. Native-band On gain stays 0.20 with a 0.18 intensity cap.
+  Build18's stronger continuous action cues failed physical feel as too strong
+  and buzzing. Build19 emits a single lower-strength transient (0.10–0.20,
+  sharpness0.90–1) per confirmed in-game event, with no sustained cue envelope.
+  Same-tick cues select the strongest event; duplicates, stale events and bursts
+  within50ms are consumed without delayed replay. Native intensity0.055 or more
+  suppresses extra taps, and stronger native output immediately preempts a tap.
+  Quiet native texture pauses for at most30ms around a tap, so two players do
+  not sum on the actuator. Controller gains and native capture mapping are unchanged.
+  The local sink requires fresh game frames (150 ms), a native value newer than
+  activation, foreground/permit state and a supported actuator. Effects have a
+  finite 100 ms hardware lease for native continuous output; transients end
+  themselves and release their player within30ms. Off, background, controller selection, stale
+  heartbeat, native stops and engine failures release output; old engine callbacks
+  cannot restart a new engine. Settings/reset recovery require fresh input.
+  The coordinator's physical hardware probe reports iPad unsupported and iPhone
+  supported. The player reports native Bullet Bill capture felt, while normal
+  jumps/landings, long jumps/backflips, cap throws, coins and ground pounds were
+  missing/too faint. The earlier global no-feel report is superseded by that
+  narrower observation. Phone-specific event transients avoid multiplying
+  already-small controller cues by another .20/.30; native bands/strong capture
+  gain are unchanged. No touch/controller button edge creates an event.
+  Seven extra first-step callbacks are guarded independently
+  by exact main build, RTTI, singleton/vtable ownership and expected code bytes.
+  Their separate bounded queue cannot evict or enter controller cues. Standard
+  3D/2D coins and HackCap ThrowStart are covered; special variants remain untested.
+  Build17 full controls and the three-switch sheet were physically accepted.
+  Build18 changes activation to tap; its haptic texture/strength failed.
+  Build19 actual sink/tick tests pass30 checks, including input-only silence,
+  one-shot playback, native preemption and lifecycle cleanup; policy2600 checks
+  and sanitizers pass. New transient feel and tap delivery still require physical follow-up. No
+  audio or generic vibration fallback is used.
+
+- The gear consumes a fixed 44-point hit region before gameplay routing. Opening
+  activates on normal tap release with at most 12 points of motion; a resting
+  gameplay thumb is allowed and presentation neutralizes all owned input.
+  Cancellation, second gear fingers, rotation, disconnect/background and stale generations
+  cannot open it later. Expanded +/- hit regions keep at least a 5-point gap.
+  The UIKit adapter inspects real coalesced touch samples as well as the latest
+  endpoint, so a rapid out-and-back excursion over 12 points stays cancelled.
+  The portable canonical contract tests geometry/gesture boundaries; preview
+  renders do not substitute for actual UIKit/device touch testing.
+
+- The Gyro On/Off switch uses the existing Auto/Off source router and the
+  existing guest six-axis ABI. Device transforms, source arbitration, original
+  sample-age rejection, history reset and touch-only operation have local tests.
+  Real iPad/iPhone aiming, shake actions, orientation and controller regression
+  still require physical testing. No device update is implied by a build.
+
 - Three thunder-effect geometry shaders remain unsupported in the original
   tested shader set. Full-game visual correctness isn't certified.
 - Internal rendering is 1600×900. Camera/display aspect is separate from raster
@@ -27,6 +94,13 @@
   EINTR retry fix preserves all consistency guards and improves diagnostics;
   the actual failing device branch, a full live retest of that fix and the
   reverse phone-to-iPad handoff are still unverified.
+- The release candidate also gates cloud publication on a durable committed-save
+  journal, and persists account/ancestry state before acknowledging sync. Failed
+  writes retain pending progress and retry without requiring another game save.
+  The production coordinator passes 24 synthetic scenarios and 251 checks using
+  real Foundation write failures, including recovery after server acknowledgement,
+  newer commits, import and account changes. Ordinary and sanitizer runs cover
+  local logic; a fresh two-device physical handoff remains a separate check.
 - Xcode 27 is the tested build toolchain; deployment minimum is iOS 26. Other
   devices, low-memory phones, free-account signing and ad hoc signing are unverified.
 - A clean source build/signing-helper check does not automatically install or

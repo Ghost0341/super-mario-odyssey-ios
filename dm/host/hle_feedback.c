@@ -18,6 +18,8 @@ static const double tau = 6.2831853071795864769;
 static const dm_vibration_value neutral = {0, 160, 0, 320};
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t epoch = 1, last_game_tick, produced, last_motion_ns;
+static uint64_t motion_epoch = 1;
+static unsigned motion_managed, motion_enabled;
 static uint64_t vibration_sends, motion_reads, motion_states_returned;
 static unsigned connected, foreground, capabilities;
 static unsigned permitted = 1;
@@ -76,7 +78,7 @@ uint64_t dm_feedback_set_device(int c, int f, unsigned caps, uint64_t now) {
     unsigned nc = !!c, nf = !!f, ncap = caps & 7;
     if (nc != connected || nf != foreground || ncap != capabilities) {
         connected = nc; foreground = nf; capabilities = ncap;
-        ++epoch; last_game_tick = 0; clear_motion();
+        ++epoch; ++motion_epoch; last_game_tick = 0; clear_motion();
         for (int i = 0; i < 2; i++) { last[i] = neutral; updated[i] = now; ++sequence[i]; }
     }
     uint64_t result = epoch;
@@ -85,6 +87,16 @@ uint64_t dm_feedback_set_device(int c, int f, unsigned caps, uint64_t now) {
 }
 uint64_t dm_feedback_epoch(void) {
     pthread_mutex_lock(&lock); uint64_t e = epoch; pthread_mutex_unlock(&lock); return e;
+}
+uint64_t dm_feedback_motion_begin(int enabled) {
+    pthread_mutex_lock(&lock);
+    motion_managed = 1; motion_enabled = !!enabled;
+    ++motion_epoch; clear_motion();
+    uint64_t e = motion_epoch;
+    pthread_mutex_unlock(&lock); return e;
+}
+static int motion_live(void) {
+    return foreground && (motion_managed ? motion_enabled : connected && (capabilities & DM_FEEDBACK_MOTION));
 }
 void dm_feedback_game_tick(uint64_t now) {
     pthread_mutex_lock(&lock);
@@ -104,8 +116,18 @@ void dm_feedback_poll(uint64_t now, dm_feedback_output *out) {
     *out = (dm_feedback_output){.epoch = epoch, .connected = connected, .foreground = foreground,
                                 .capabilities = capabilities, .motion_samples = produced,
                                 .motion_updated_ns = last_motion_ns, .vibration_sends = vibration_sends,
-                                .motion_reads = motion_reads, .motion_states_returned = motion_states_returned};
+                                .motion_reads = motion_reads, .motion_states_returned = motion_states_returned,
+                                .motion_epoch = motion_managed ? motion_epoch : epoch, .motion_available = motion_live()};
     for (int i = 0; i < 2; i++) { out->value[i] = effective(i, now); out->updated_ns[i] = updated[i]; out->sequence[i] = sequence[i]; }
+    pthread_mutex_unlock(&lock);
+}
+void dm_feedback_native_poll(dm_feedback_native_output *out) {
+    if (!out) return;
+    pthread_mutex_lock(&lock);
+    *out = (dm_feedback_native_output){.epoch = epoch, .foreground = foreground, .permitted = permitted};
+    for (int i = 0; i < 2; i++) {
+        out->value[i] = last[i]; out->updated_ns[i] = updated[i]; out->sequence[i] = sequence[i];
+    }
     pthread_mutex_unlock(&lock);
 }
 static dm_vibration_value clean_value(const dm_vibration_value *v) {
@@ -206,7 +228,7 @@ int dm_feedback_motion_push(uint64_t e, const double acc[3], const double gyro[3
     if (!acc || !gyro || !now) return 0;
     for (int i = 0; i < 3; i++) if (!isfinite(acc[i]) || !isfinite(gyro[i]) || fabs(acc[i]) > 64 || fabs(gyro[i]) > 100) return 0;
     pthread_mutex_lock(&lock);
-    if (e != epoch || !connected || !foreground || !(capabilities & DM_FEEDBACK_MOTION) || (last_motion_ns && now <= last_motion_ns)) {
+    if (e != (motion_managed ? motion_epoch : epoch) || !motion_live() || (last_motion_ns && now <= last_motion_ns)) {
         pthread_mutex_unlock(&lock); return 0;
     }
     uint64_t delta = last_motion_ns ? now-last_motion_ns : 4000000;
@@ -247,7 +269,7 @@ int dm_feedback_six_read(uint32_t h, dm_six_axis_state *out, int max, uint64_t n
     int style = six_style(h), n = 0;
     pthread_mutex_lock(&lock);
     ++motion_reads;
-    if (style >= 0 && started[style] && connected && foreground && (capabilities & DM_FEEDBACK_MOTION) && fresh(now, last_motion_ns, motion_lease_ns)) {
+    if (style >= 0 && started[style] && motion_live() && fresh(now, last_motion_ns, motion_lease_ns)) {
         n = max < DM_FEEDBACK_MOTION_MAX ? max : DM_FEEDBACK_MOTION_MAX;
         if ((unsigned)n > have) n = (int)have;
         for (int i = 0; i < n; i++) out[i] = ring[(produced-1-(uint64_t)i) % RING_SIZE];

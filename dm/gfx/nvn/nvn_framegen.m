@@ -2,6 +2,7 @@
 // No NVN resource or ticket is retained after captureSource returns. Original
 // frames retain RGB quality; only generated frames pass through video-range NV12.
 #import "nvn_framegen.h"
+#include "nvn_frame_geometry.h"
 #import <CoreVideo/CoreVideo.h>
 #import <CoreMedia/CoreMedia.h>
 #import <VideoToolbox/VideoToolbox.h>
@@ -178,7 +179,8 @@ static CVPixelBufferPoolRef fg_pool(NSDictionary *attributes, CVReturn *status) 
 @property(nonatomic, readwrite) id<MTLTexture> texture;
 @property(nonatomic, readwrite) BOOL generated;
 @property(nonatomic, readwrite) uint64_t ticket, gameFrame;
-@property(nonatomic, readwrite) double enqueuedTime;
+@property(nonatomic, readwrite) double enqueuedTime, logicalAspect;
+@property(nonatomic, readwrite) uint64_t geometryGeneration;
 @property(nonatomic) NVNFGLease *lease;
 @property(nonatomic) uint64_t epoch;
 @end
@@ -219,9 +221,9 @@ static void fg_dispatch(id<MTLComputeCommandEncoder> e, id<MTLComputePipelineSta
     [e setComputePipelineState:pipeline];
     [e dispatchThreads:MTLSizeMake(width, height, 1) threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
 }
-static NVNFrameGenOutput *fg_output(NVNFGLease *lease, BOOL generated, uint64_t ticket, uint64_t gameFrame, double time, uint64_t epoch) {
+static NVNFrameGenOutput *fg_output(NVNFGLease *lease, BOOL generated, uint64_t ticket, uint64_t gameFrame, double time, uint64_t epoch, double aspect, uint64_t generation) {
     NVNFrameGenOutput *o = [NVNFrameGenOutput new]; o.texture = lease.surface->rgb; o.lease = lease;
-    o.generated = generated; o.ticket = ticket; o.gameFrame = gameFrame; o.enqueuedTime = time; o.epoch = epoch; return o;
+    o.generated = generated; o.ticket = ticket; o.gameFrame = gameFrame; o.enqueuedTime = time; o.epoch = epoch; o.logicalAspect = aspect; o.geometryGeneration = generation; return o;
 }
 
 @implementation NVNFrameGenerator
@@ -318,8 +320,8 @@ static NVNFrameGenOutput *fg_output(NVNFGLease *lease, BOOL generated, uint64_t 
     }
     [_contextLock unlock]; return context;
 }
-- (NVNFrameGenCapture *)captureSource:(id<MTLTexture>)source crop:(MTLRegion)crop originLowerLeft:(BOOL)flip ticket:(uint64_t)ticket gameFrame:(uint64_t)frame enqueuedTime:(double)time waitEvent:(id<MTLEvent>)event waitValue:(uint64_t)value {
-    if (!self.captureReady || self.suspended) return nil;
+- (NVNFrameGenCapture *)captureSource:(id<MTLTexture>)source crop:(MTLRegion)crop originLowerLeft:(BOOL)flip ticket:(uint64_t)ticket gameFrame:(uint64_t)frame enqueuedTime:(double)time logicalAspect:(double)aspect geometryGeneration:(uint64_t)generation waitEvent:(id<MTLEvent>)event waitValue:(uint64_t)value {
+    if (!self.captureReady || self.suspended || !isfinite(aspect) || aspect < 0) return nil;
     uint64_t epoch = atomic_load_explicit(&_epoch, memory_order_acquire);
     if (!source || source.textureType != MTLTextureType2D || source.sampleCount != 1 || crop.origin.z || crop.size.depth != 1 || !crop.size.width || !crop.size.height || crop.origin.x > source.width || crop.size.width > source.width - crop.origin.x || crop.origin.y > source.height || crop.size.height > source.height - crop.origin.y) {
         atomic_fetch_add(&_captureErrors, 1); return nil;
@@ -358,7 +360,7 @@ static NVNFrameGenOutput *fg_output(NVNFGLease *lease, BOOL generated, uint64_t 
     [cb waitUntilCompleted]; double ms = (fg_now() - started) * 1000;
     atomic_store(&_lastCopyMS, ms); atomic_fetch_add(&_copyTotalMS, ms);
     if (cb.status != MTLCommandBufferStatusCompleted || self.suspended || epoch != atomic_load_explicit(&_epoch, memory_order_acquire)) { atomic_fetch_add(&_captureErrors, 1); return nil; }
-    NVNFrameGenCapture *capture = [NVNFrameGenCapture new]; capture.sourceOutput = fg_output(lease, NO, ticket, frame, time, epoch);
+    NVNFrameGenCapture *capture = [NVNFrameGenCapture new]; capture.sourceOutput = fg_output(lease, NO, ticket, frame, time, epoch, aspect, generation);
     atomic_fetch_add(&_captures, 1); return capture;
 }
 - (NSArray<NVNFrameGenOutput *> *)processCapture:(NVNFrameGenCapture *)capture {
@@ -370,7 +372,7 @@ static NVNFrameGenOutput *fg_output(NVNFGLease *lease, BOOL generated, uint64_t 
     NVNFGContext *context = source.lease.context;
     // Gaps and loading transitions are discontinuities, not invented motion.
     double delta = source.enqueuedTime - p.enqueuedTime;
-    if (!self.interpolationEnabled || !p || p.epoch != epoch || p.lease.context != context || source.ticket <= p.ticket || source.gameFrame != p.gameFrame + 1 || delta < .004 || delta > .05 || !source.lease.surface->pixelBuffer || !p.lease.surface->pixelBuffer || !atomic_load_explicit(&context->sessionReady, memory_order_acquire) || atomic_load_explicit(&context->failed, memory_order_acquire)) {
+    if (!self.interpolationEnabled || !p || p.epoch != epoch || p.lease.context != context || !nvn_frame_geometry_equal(source.logicalAspect, source.geometryGeneration, p.logicalAspect, p.geometryGeneration) || source.ticket <= p.ticket || source.gameFrame != p.gameFrame + 1 || delta < .004 || delta > .05 || !source.lease.surface->pixelBuffer || !p.lease.surface->pixelBuffer || !atomic_load_explicit(&context->sessionReady, memory_order_acquire) || atomic_load_explicit(&context->failed, memory_order_acquire)) {
         atomic_fetch_add(&_nativeOnly, 1); return @[source];
     }
     NVNFGSurface *surface = [context acquire:YES];
@@ -410,7 +412,7 @@ static NVNFrameGenOutput *fg_output(NVNFGLease *lease, BOOL generated, uint64_t 
         if (self.suspended || epoch != atomic_load_explicit(&_epoch, memory_order_acquire)) return @[];
         if (!self.interpolationEnabled) { atomic_fetch_add(&_nativeOnly, 1); return @[source]; }
         if (cb.status != MTLCommandBufferStatusCompleted) { atomic_fetch_add(&_processErrors, 1); atomic_fetch_add(&_nativeOnly, 1); return @[source]; }
-        NVNFrameGenOutput *midpoint = fg_output(lease, YES, source.ticket, source.gameFrame, midpointTime, epoch);
+        NVNFrameGenOutput *midpoint = fg_output(lease, YES, source.ticket, source.gameFrame, midpointTime, epoch, source.logicalAspect, source.geometryGeneration);
         atomic_fetch_add(&_generated, 1); return @[midpoint, source];
     }
 #endif

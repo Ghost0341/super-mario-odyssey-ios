@@ -26,7 +26,7 @@ class WorkflowTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('game', ROOT / 'dm/games/game.py')
         game = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(game)
-        for preset, aspect in [('ipad', '4:3'), ('iphone', '239:110')]:
+        for preset, aspect in [('ipad', '4:3'), ('duo', '4:3'), ('iphone', '239:110')]:
             with tempfile.TemporaryDirectory() as temp:
                 path = make_profile(Path(temp), preset, '', True) / '0100000000010000'
                 profile = game.Game(path)
@@ -98,6 +98,10 @@ class WorkflowTests(unittest.TestCase):
         options = parse_args(['--nsp-dir', '/private/game', '--keys', '/private/keys', '--preset', 'iphone'])
         self.assertEqual(options.preset, 'iphone')
         self.assertEqual(options.cloud_container, '')
+        self.assertEqual(parse_args(['--extracted-dir', '/private/game', '--preset', 'duo', '--prepare-only']).preset, 'duo')
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaises(ValueError):
+                make_profile(Path(temp), 'unknown', '', False)
 
     def test_publication_rejects_assets_even_when_they_are_plain_text(self):
         self.assertTrue(inspect_entry('shader.metal', b'// private generated shader', {}))

@@ -26,9 +26,15 @@ def main():
                   '-I', ROOT / 'dm/host/gen/0100000000010000', '-I', ROOT / 'dm/games/0100000000010000']
         for name, sources in [
             ('feedback', ['dm/host/tests/t_feedback.c', 'dm/host/hle_feedback.c']),
+            ('motion-source', ['dm/host/tests/t_motion_source.c', 'dm/host/hle_feedback.c']),
+            ('device-haptics', ['dm/host/tests/t_device_haptics.c', 'dm/host/hle_feedback.c']),
+            ('touch-controls', ['dm/host/tests/t_touch_controls.c']),
             ('policy', ['dm/host/tests/t_feedback_policy.c']),
             ('takeoffs', ['dm/host/tests/t_odyssey_feedback.c']),
+            ('local-actions', ['dm/host/tests/t_odyssey_local_feedback.c']),
             ('aspect', ['dm/host/tests/t_present_aspect.c']),
+            ('display-geometry', ['dm/ios/tests/t_display_geometry.c']),
+            ('live-camera', ['dm/host/tests/t_odyssey_display.c']),
         ]:
             binary = build / name
             run(common + sources + ['-o', binary])
@@ -41,6 +47,10 @@ def main():
                  'dm/host/tests/t_fs_save_committed_stub.c', 'dm/host/tests/t_fs_stub.c', 'dm/host/hle_bigstack.c', '-o', binary])
             run([binary])
         archive = build / 'archive'
+        gear = build / 'gear-samples'
+        run(['xcrun', 'clang', '-fobjc-arc', '-Wall', '-Wextra', '-Werror', '-I', ROOT / 'dm/host',
+             '-framework', 'Foundation', '-framework', 'CoreGraphics', 'dm/ios/tests/t_gear_touch_samples.m', '-o', gear])
+        run([gear])
         run(['xcrun', 'clang', '-fobjc-arc', '-fblocks', '-O1', '-g', '-I', ROOT / 'dm/ios/tests/cloud_coordinator',
              '-framework', 'Foundation', 'dm/ios/tests/t_save_archive.m', '-o', archive])
         env = dict(os.environ)

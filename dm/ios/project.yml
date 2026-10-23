@@ -14,6 +14,7 @@ targets:
     dependencies:
       - sdk: GameController.framework
       - sdk: CoreHaptics.framework
+      - sdk: CoreMotion.framework
       - sdk: CloudKit.framework
     sources:
       - Sources
@@ -29,6 +30,7 @@ targets:
       path: Sources/Info.plist
       properties:
         CFBundleDisplayName: ${DM_DISPLAY_NAME}   # the game name in the base NSP (set by build_ipa.sh)
+        CFBundleName: ${DM_DISPLAY_NAME}
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         UILaunchStoryboardName: ""
@@ -44,6 +46,7 @@ targets:
         DMShowFPS: ${DM_SHOW_FPS}           # YES = the frame-rate counter is on (front_ios.m; set by build_ipa.sh)
         LSSupportsGameMode: true
         GCSupportsControllerUserInteraction: true   # Physical controllers (GameController)
+        NSMotionUsageDescription: Use this device's motion for gyro aiming and the game's motion controls.
         GCSupportedGameControllers:
           - ProfileName: ExtendedGamepad
         CADisableMinimumFrameDurationOnPhone: true
