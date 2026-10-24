@@ -16,26 +16,17 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Build Project with xcodebuild
-        run: |
-          # Finds the project/workspace automatically and builds it
-          xcodebuild build \
-            -configuration Release \
-            -sdk iphoneos \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            BUILD_DIR=build
+      - name: List Repository Files (Debug)
+        run: ls -la
 
-      - name: Package as .ipa
+      - name: Build Project
         run: |
-          mkdir -p Payload
-          # Copies the generated .app bundle into Payload directory
-          cp -r build/Release-iphoneos/*.app Payload/
-          zip -r AppRelease.ipa Payload
+          # If the project uses CMake, uncomment and use these lines:
+          # cmake -B build -G "Xcode" -DCMAKE_SYSTEM_NAME=iOS
+          # cmake --build build --config Release
 
-      - name: Upload IPA Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: MarioOdyssey-iOS-IPA
-          path: AppRelease.ipa
+          # Alternatively, if there is a custom build script (like build.sh or Makefile), look for it:
+          # ./build.sh
+          
+          echo "Please check the repository root for build instructions or configuration files."
+          exit 1
