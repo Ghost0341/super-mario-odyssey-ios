@@ -16,17 +16,38 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: List Repository Files (Debug)
-        run: ls -la
-
-      - name: Build Project
+      - name: Locate and Build Project
         run: |
-          # If the project uses CMake, uncomment and use these lines:
-          # cmake -B build -G "Xcode" -DCMAKE_SYSTEM_NAME=iOS
-          # cmake --build build --config Release
-
-          # Alternatively, if there is a custom build script (like build.sh or Makefile), look for it:
-          # ./build.sh
+          set -e
+          echo "Searching for Xcode projects or workspaces..."
           
-          echo "Please check the repository root for build instructions or configuration files."
-          exit 1
+          WORKSPACE=$(find . -name "*.xcworkspace" -maxdepth 3 | head -n 1)
+          PROJECT=$(find . -name "*.xcodeproj" -maxdepth 3 | head -n 1)
+          
+          if [ -n "$WORKSPACE" ]; then
+            echo "Found workspace: $WORKSPACE"
+            SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list | grep -m 1 -E '^\s+' | tr -d '[:space:]')
+            echo "Building scheme: $SCHEME"
+            xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Release -sdk iphoneos CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO BUILD_DIR=build
+          elif [ -n "$PROJECT" ]; then
+            echo "Found project: $PROJECT"
+            SCHEME=$(xcodebuild -project "$PROJECT" -list | grep -m 1 -E '^\s+' | tr -d '[:space:]')
+            echo "Building scheme: $SCHEME"
+            xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release -sdk iphoneos CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO BUILD_DIR=build
+          else
+            echo "Error: No Xcode project or workspace found in the repository."
+            ls -la
+            exit 1
+          fi
+
+      - name: Package as .ipa
+        run: |
+          mkdir -p Payload
+          cp -r build/Release-iphoneos/*.app Payload/
+          zip -r AppRelease.ipa Payload
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MarioOdyssey-iOS-IPA
+          path: AppRelease.ipa
