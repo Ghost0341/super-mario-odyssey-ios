@@ -1,34 +1,31 @@
-name: Build iOS IPA
+name: Build Super Mario Odyssey iOS/IP Script
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+lt-build:
     runs-on: macos-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Xcode
-        uses: maxim-lobanov/setup-xcode@v1
+      - name: Set up Python & Dependencies
+        uses: actions/setup-python@v5
         with:
-          xcode-version: latest-stable
+          python-version: '3.11'
 
-      - name: List All Repository Files & Scripts
+      - name: Install System & Python Dependencies
         run: |
-          echo "=== ROOT DIRECTORY ==="
-          ls -la
-          
-          echo "=== SCRIPTS FOLDER ==="
-          if [ -d "scripts" ]; then ls -la scripts; else echo "No scripts folder"; fi
-          
-          echo "=== TOOLS FOLDER ==="
-          if [ -d "tools" ]; then ls -la tools; else echo "No tools folder"; fi
-          
-          echo "=== DM FOLDER ==="
-          if [ -d "dm" ]; then ls -la dm; else echo "No dm folder"; fi
+          brew install opus libvpx
+          pip install capstone cryptography lz4
 
-          echo "=== SEARCHING FOR BUILD / MAKE / CMAKE FILES ==="
-          find . -name "Makefile" -o -name "CMakeLists.txt" -o -name "*.sh" -o -name "*.py"
+      - name: Check Scripts & Environment
+        run: |
+          python3 --version
+          ls -la scripts/
+          ls -la tools/
+
+      # Add your game files or configure the build command scripts here 
+      # depending on what scripts/ contains (e.g., python3 scripts/build.py)
