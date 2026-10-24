@@ -16,38 +16,19 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Locate and Build Project
+      - name: List All Repository Files & Scripts
         run: |
-          set -e
-          echo "Searching for Xcode projects or workspaces..."
+          echo "=== ROOT DIRECTORY ==="
+          ls -la
           
-          WORKSPACE=$(find . -name "*.xcworkspace" -maxdepth 3 | head -n 1)
-          PROJECT=$(find . -name "*.xcodeproj" -maxdepth 3 | head -n 1)
+          echo "=== SCRIPTS FOLDER ==="
+          if [ -d "scripts" ]; then ls -la scripts; else echo "No scripts folder"; fi
           
-          if [ -n "$WORKSPACE" ]; then
-            echo "Found workspace: $WORKSPACE"
-            SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list | grep -m 1 -E '^\s+' | tr -d '[:space:]')
-            echo "Building scheme: $SCHEME"
-            xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Release -sdk iphoneos CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO BUILD_DIR=build
-          elif [ -n "$PROJECT" ]; then
-            echo "Found project: $PROJECT"
-            SCHEME=$(xcodebuild -project "$PROJECT" -list | grep -m 1 -E '^\s+' | tr -d '[:space:]')
-            echo "Building scheme: $SCHEME"
-            xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release -sdk iphoneos CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO BUILD_DIR=build
-          else
-            echo "Error: No Xcode project or workspace found in the repository."
-            ls -la
-            exit 1
-          fi
+          echo "=== TOOLS FOLDER ==="
+          if [ -d "tools" ]; then ls -la tools; else echo "No tools folder"; fi
+          
+          echo "=== DM FOLDER ==="
+          if [ -d "dm" ]; then ls -la dm; else echo "No dm folder"; fi
 
-      - name: Package as .ipa
-        run: |
-          mkdir -p Payload
-          cp -r build/Release-iphoneos/*.app Payload/
-          zip -r AppRelease.ipa Payload
-
-      - name: Upload IPA Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: MarioOdyssey-iOS-IPA
-          path: AppRelease.ipa
+          echo "=== SEARCHING FOR BUILD / MAKE / CMAKE FILES ==="
+          find . -name "Makefile" -o -name "CMakeLists.txt" -o -name "*.sh" -o -name "*.py"
